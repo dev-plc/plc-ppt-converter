@@ -150,13 +150,31 @@ def cmd_auth():
         def log_message(self, *_):
             pass  # 콘솔 로그 억제
 
-    try:
-        server = http.server.HTTPServer(("127.0.0.1", 8080), _Handler)
-    except OSError:
-        print("오류: 포트 8080을 사용할 수 없습니다. 다른 프로세스가 점유 중일 수 있습니다.")
+    # 사용 가능한 포트 자동 탐색 (8080 → 8081 → ... → 8090)
+    server = None
+    port   = 8080
+    for p in range(8080, 8091):
+        try:
+            server = http.server.HTTPServer(("127.0.0.1", p), _Handler)
+            port   = p
+            break
+        except OSError:
+            continue
+    if server is None:
+        print("오류: 포트 8080~8090 모두 사용 중입니다.")
         sys.exit(1)
 
-    thread = threading.Thread(target=server.handle_request, daemon=True)
+    # 사용 포트가 바뀌면 redirect URI도 갱신
+    actual_redirect = f"http://127.0.0.1:{port}/callback"
+    auth_params["redirect_uri"] = actual_redirect
+    auth_url = AUTH_URL + "?" + urllib.parse.urlencode(auth_params)
+
+    def _serve():
+        # 코드를 받을 때까지 계속 요청 처리 (favicon 등 복수 요청 대응)
+        while not code_holder.get("code") and not code_holder.get("error"):
+            server.handle_request()
+
+    thread = threading.Thread(target=_serve, daemon=True)
     thread.start()
 
     print("브라우저에서 Canva 로그인 페이지가 열립니다...")
@@ -175,7 +193,7 @@ def cmd_auth():
     token_data = urllib.parse.urlencode({
         "grant_type":    "authorization_code",
         "code":          code,
-        "redirect_uri":  REDIRECT_URI,
+        "redirect_uri":  actual_redirect,
         "client_id":     CLIENT_ID,
         "code_verifier": verifier,
     }).encode()
