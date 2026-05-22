@@ -27,7 +27,8 @@ import http.server
 from pathlib import Path
 
 # ── 설정 ──────────────────────────────────────────────────────────────────────
-CLIENT_ID    = "OC-AZ5O0t4gEaqt"
+CLIENT_ID     = "OC-AZ5O0t4gEaqt"
+CLIENT_SECRET = os.environ.get("CANVA_CLIENT_SECRET", "")
 REDIRECT_URI = "http://127.0.0.1:8080/callback"
 SCOPES       = "design:content:write design:content:read asset:write profile:read"
 
@@ -77,6 +78,7 @@ def _refresh_token(token: dict) -> dict:
         "grant_type":    "refresh_token",
         "refresh_token": refresh_tok,
         "client_id":     CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
     }).encode()
 
     req = urllib.request.Request(
@@ -105,6 +107,10 @@ def get_access_token() -> str:
 # ── OAuth 인증 흐름 ────────────────────────────────────────────────────────────
 
 def cmd_auth():
+    if not CLIENT_SECRET:
+        print("오류: CANVA_CLIENT_SECRET 환경변수가 설정되지 않았습니다.")
+        print("  PowerShell: $env:CANVA_CLIENT_SECRET='시크릿값'")
+        sys.exit(1)
     verifier, challenge = _pkce_pair()
     state = secrets.token_urlsafe(16)
 
@@ -195,6 +201,7 @@ def cmd_auth():
         "code":          code,
         "redirect_uri":  actual_redirect,
         "client_id":     CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
         "code_verifier": verifier,
     }).encode()
 
