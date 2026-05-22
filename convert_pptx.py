@@ -378,6 +378,8 @@ def main():
     parser.add_argument("--png", action="store_true",
                         help="변환 후 PNG 내보내기 (PowerPoint 필요)")
     parser.add_argument("--png-dir",       help="PNG 저장 폴더")
+    parser.add_argument("--canva", action="store_true",
+                        help="변환 후 Canva에 자동 업로드 (canva_api.py 인증 필요)")
     args = parser.parse_args()
 
     if not os.path.exists(args.input):
@@ -410,6 +412,15 @@ def main():
         png_dir = args.png_dir or os.path.splitext(out_path)[0] + "_slides"
         print(f"[+]  PNG 내보내기 → {png_dir}")
         export_png(out_path, png_dir)
+
+    if args.canva:
+        try:
+            from canva_api import upload_pptx
+            upload_pptx(out_path, verbose=True)
+        except ImportError:
+            print("오류: canva_api.py 파일이 없습니다.")
+        except RuntimeError as e:
+            print(f"Canva 업로드 오류: {e}")
 
 
 if __name__ == "__main__":

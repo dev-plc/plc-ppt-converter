@@ -19,3 +19,6 @@ __pycache__/
 # 환경
 .env
 *.env
+
+# Canva OAuth 토큰 (민감 정보)
+.canva_token.json
