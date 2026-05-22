@@ -3,6 +3,12 @@
 ## 작업 폴더
 `C:\Users\myc43\OneDrive - ETERNAL LIBRTY POLICY INSTITUTE\바탕 화면\plc ppt`
 
+## GitHub
+- 레포: https://github.com/dev-plc/plc-ppt-converter
+- 계정: dev-plc (dev@plch.or.kr)
+- 브랜치: master
+- 동기화: `git pull` / `git push`
+
 ## 핵심 파일
 - `convert_pptx.py` — 메인 변환 스크립트 (Before PPTX → After PPTX + PNG)
 - `표지.png` — 타이틀 슬라이드 배경 (성경책 아이콘 + 별 장식 포함)
