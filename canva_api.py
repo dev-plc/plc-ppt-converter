@@ -28,7 +28,7 @@ from pathlib import Path
 
 # ── 설정 ──────────────────────────────────────────────────────────────────────
 CLIENT_ID    = "OC-AZ5O0t4gEaqt"
-REDIRECT_URI = "http://localhost:8080/callback"
+REDIRECT_URI = "http://127.0.0.1:8080/callback"
 SCOPES       = "design:content:write design:content:read asset:write profile:read"
 
 AUTH_URL     = "https://www.canva.com/api/oauth/authorize"
@@ -151,7 +151,7 @@ def cmd_auth():
             pass  # 콘솔 로그 억제
 
     try:
-        server = http.server.HTTPServer(("localhost", 8080), _Handler)
+        server = http.server.HTTPServer(("127.0.0.1", 8080), _Handler)
     except OSError:
         print("오류: 포트 8080을 사용할 수 없습니다. 다른 프로세스가 점유 중일 수 있습니다.")
         sys.exit(1)
