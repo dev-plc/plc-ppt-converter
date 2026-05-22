@@ -378,6 +378,9 @@ def main():
     parser.add_argument("--png", action="store_true",
                         help="변환 후 PNG 내보내기 (PowerPoint 필요)")
     parser.add_argument("--png-dir",       help="PNG 저장 폴더")
+    parser.add_argument("--canva", action="store_true",
+                        help="변환 후 Canva로 자동 업로드")
+    parser.add_argument("--canva-token",   help="Canva Access Token (없으면 CANVA_ACCESS_TOKEN 환경변수)")
     args = parser.parse_args()
 
     if not os.path.exists(args.input):
@@ -410,6 +413,20 @@ def main():
         png_dir = args.png_dir or os.path.splitext(out_path)[0] + "_slides"
         print(f"[+]  PNG 내보내기 → {png_dir}")
         export_png(out_path, png_dir)
+
+    if args.canva:
+        from canva_upload import upload_to_canva
+        token = args.canva_token or os.environ.get("CANVA_ACCESS_TOKEN", "").strip()
+        if not token:
+            print("\n[Canva] 오류: Access Token이 없습니다.")
+            print("  CANVA_ACCESS_TOKEN 환경변수 또는 --canva-token 옵션을 설정하세요.")
+            sys.exit(1)
+        design_name = f"{t['series']} {t['lecture_title']}".strip() or os.path.splitext(
+            os.path.basename(out_path)
+        )[0]
+        print(f"[+]  Canva 업로드: {design_name}")
+        result = upload_to_canva(out_path, design_name, token)
+        print(f"     편집 링크 : {result['edit_url']}")
 
 
 if __name__ == "__main__":
