@@ -264,6 +264,25 @@ def upload_pptx(pptx_path: str, verbose: bool = True) -> str:
     )
 
     with open(path, "rb") as f:
+        file_bytes = f.read()
+
+    # 방법 1: raw body (Content-Type = PPTX MIME)
+    resp = httpx.post(
+        f"{API_BASE}/imports",
+        headers={
+            "Authorization":   f"Bearer {access_token}",
+            "Content-Type":    mime_type,
+            "Import-Metadata": json.dumps({
+                "title":     path.stem,
+                "mime_type": mime_type,
+            }),
+        },
+        content=file_bytes,
+        timeout=60,
+    )
+
+    # 방법 2: multipart (방법 1 실패 시)
+    if resp.status_code == 415:
         resp = httpx.post(
             f"{API_BASE}/imports",
             headers={
@@ -273,7 +292,7 @@ def upload_pptx(pptx_path: str, verbose: bool = True) -> str:
                     "mime_type": mime_type,
                 }),
             },
-            files={"asset_upload": (path.name, f, mime_type)},
+            files={"asset_upload": (path.name, file_bytes, mime_type)},
             timeout=60,
         )
 
