@@ -132,8 +132,10 @@ def _para_runs(para) -> list:
 def _bullet_full_text(bullet: list) -> str:
     return ''.join(r['text'] for r in bullet)
 
-def _extract_images(slide) -> list:
-    """슬라이드의 모든 이미지를 위치·크기 정보와 함께 추출한다."""
+def _extract_images(slide, scale_x=1.0, scale_y=1.0) -> list:
+    """슬라이드의 모든 이미지를 위치·크기 정보와 함께 추출한다.
+    scale_x/y: 소스 슬라이드 → After 슬라이드 좌표 변환 비율.
+    """
     images = []
     for shape in slide.shapes:
         blips = shape._element.findall(f'.//{{{_NS_A}}}blip')
@@ -144,16 +146,16 @@ def _extract_images(slide) -> list:
                     blob = slide.part.rels[rId].target_part.blob
                     images.append({
                         'bytes':  blob,
-                        'left':   shape.left,
-                        'top':    shape.top,
-                        'width':  shape.width,
-                        'height': shape.height,
+                        'left':   int(shape.left   * scale_x),
+                        'top':    int(shape.top    * scale_y),
+                        'width':  int(shape.width  * scale_x),
+                        'height': int(shape.height * scale_y),
                     })
                 except Exception:
                     pass
     return images
 
-def parse_content_slide(slide):
+def parse_content_slide(slide, scale_x=1.0, scale_y=1.0):
     title_tf = _tf_by_name(slide, "제목 1")
 
     # "내용 개체 틀 2", "내용 개체 틀 4" 등 번호 무관하게 탐색
@@ -186,17 +188,22 @@ def parse_content_slide(slide):
         if runs:
             bullets.append(runs)
 
-    images = _extract_images(slide)
+    images = _extract_images(slide, scale_x, scale_y)
     return heading, bullets, images
 
 def parse_before(path: str) -> dict:
     prs = Presentation(path)
     all_slides = list(prs.slides)
+
+    # 소스 슬라이드 크기가 After 기준(SLIDE_W×SLIDE_H)과 다를 경우 좌표 스케일링
+    scale_x = int(SLIDE_W) / int(prs.slide_width)
+    scale_y = int(SLIDE_H) / int(prs.slide_height)
+
     series, lecture_title, pastor = parse_title_slide(all_slides[0])
 
     content_slides = []
     for slide in all_slides[1:]:
-        heading, bullets, images = parse_content_slide(slide)
+        heading, bullets, images = parse_content_slide(slide, scale_x, scale_y)
         if heading or bullets or images:
             content_slides.append({"heading": heading, "bullets": bullets, "images": images})
 
