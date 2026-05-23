@@ -36,7 +36,7 @@ AUTH_URL     = "https://www.canva.com/api/oauth/authorize"
 TOKEN_URL    = "https://api.canva.com/rest/v1/oauth/token"
 API_BASE     = "https://api.canva.com/rest/v1"
 
-TOKEN_FILE   = Path(__file__).parent / ".canva_token.json"
+TOKEN_FILE   = Path(os.environ.get("DATA_DIR", str(Path(__file__).parent))) / ".canva_token.json"
 
 
 # ── PKCE ──────────────────────────────────────────────────────────────────────

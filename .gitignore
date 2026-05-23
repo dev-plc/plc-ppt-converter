@@ -22,3 +22,6 @@ __pycache__/
 
 # Canva OAuth 토큰 (민감 정보)
 .canva_token.json
+
+# 배포용 환경변수 (실제 값)
+.env
