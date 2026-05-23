@@ -247,21 +247,10 @@ def _api_request(method: str, url: str, *, json_body=None,
 
 # ── PPTX 업로드 (Import) ──────────────────────────────────────────────────────
 
-def _build_multipart(boundary: str, filename: str,
-                     file_bytes: bytes, mime: str) -> bytes:
-    b  = boundary.encode()
-    fn = filename.encode()
-    return b"".join([
-        b"--" + b + b"\r\n",
-        b'Content-Disposition: form-data; name="asset_upload"; filename="' + fn + b'"\r\n',
-        b"Content-Type: " + mime.encode() + b"\r\n\r\n",
-        file_bytes,
-        b"\r\n--" + b + b"--\r\n",
-    ])
-
-
 def upload_pptx(pptx_path: str, verbose: bool = True) -> str:
     """PPTX를 Canva에 임포트하고 디자인 URL을 반환한다."""
+    import httpx
+
     path = Path(pptx_path)
     if not path.exists():
         raise FileNotFoundError(f"파일 없음: {pptx_path}")
@@ -270,29 +259,28 @@ def upload_pptx(pptx_path: str, verbose: bool = True) -> str:
         print(f"[Canva] 업로드 중: {path.name}")
 
     access_token = get_access_token()
-    boundary  = secrets.token_hex(16)
     mime_type = (
         "application/vnd.openxmlformats-officedocument.presentationml.presentation"
     )
-    body = _build_multipart(boundary, path.name, path.read_bytes(), mime_type)
 
-    hdrs = {
-        "Authorization":   f"Bearer {access_token}",
-        "Content-Type":    f"multipart/form-data; boundary={boundary}",
-        "Import-Metadata": json.dumps({
-            "title":     path.stem,
-            "mime_type": mime_type,
-        }),
-    }
+    with open(path, "rb") as f:
+        resp = httpx.post(
+            f"{API_BASE}/imports",
+            headers={
+                "Authorization":   f"Bearer {access_token}",
+                "Import-Metadata": json.dumps({
+                    "title":     path.stem,
+                    "mime_type": mime_type,
+                }),
+            },
+            files={"asset_upload": (path.name, f, mime_type)},
+            timeout=60,
+        )
 
-    req = urllib.request.Request(
-        f"{API_BASE}/imports", data=body, headers=hdrs, method="POST"
-    )
-    try:
-        with urllib.request.urlopen(req) as r:
-            result = json.loads(r.read())
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"업로드 실패 {e.code}: {e.read().decode()}") from e
+    if resp.status_code not in (200, 201):
+        raise RuntimeError(f"업로드 실패 {resp.status_code}: {resp.text}")
+
+    result = resp.json()
 
     job_id = result.get("job", {}).get("id", "")
     if verbose:
@@ -302,12 +290,11 @@ def upload_pptx(pptx_path: str, verbose: bool = True) -> str:
     for _ in range(30):
         time.sleep(2)
         try:
-            req2 = urllib.request.Request(
+            st = httpx.get(
                 f"{API_BASE}/imports/{job_id}",
                 headers={"Authorization": f"Bearer {access_token}"},
-            )
-            with urllib.request.urlopen(req2) as r:
-                st = json.loads(r.read())
+                timeout=10,
+            ).json()
         except Exception:
             continue
 
