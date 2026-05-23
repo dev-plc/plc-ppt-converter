@@ -10,8 +10,13 @@ $NAS_USER = "plc_admin"
 $NAS_HOST = "211.104.170.129"
 $NAS_DIR  = "/volume1/docker/plc-ppt-bot"
 $SSH_KEY  = "$env:USERPROFILE\.ssh\id_ed25519"
-$SSH      = "ssh -i `"$SSH_KEY`" ${NAS_USER}@${NAS_HOST}"
-$SCP      = "scp -O -i `"$SSH_KEY`""
+
+function nas-ssh($cmd) {
+    & ssh -i $SSH_KEY "${NAS_USER}@${NAS_HOST}" $cmd
+}
+function nas-scp($src, $dst) {
+    & scp -O -i $SSH_KEY $src "${NAS_USER}@${NAS_HOST}:$dst"
+}
 
 # ── 환경변수 확인 ──────────────────────────────────────────────────────────────
 if (-not $env:TELEGRAM_BOT_TOKEN) {
@@ -24,21 +29,27 @@ if (-not $env:CANVA_CLIENT_SECRET) {
 }
 
 # ── Canva 토큰 파일 확인 ───────────────────────────────────────────────────────
-$TOKEN_FILE = ".canva_token.json"
-if (-not (Test-Path $TOKEN_FILE)) {
+if (-not (Test-Path ".canva_token.json")) {
     Write-Error ".canva_token.json 없음. 먼저 'python canva_api.py auth' 실행하세요."
     exit 1
 }
 
 Write-Host "[1/5] NAS 디렉토리 생성..." -ForegroundColor Cyan
-Invoke-Expression "$SSH `"mkdir -p ${NAS_DIR}/docker ${NAS_DIR}/data && chown -R ${NAS_USER}:users ${NAS_DIR}`""
+nas-ssh "mkdir -p ${NAS_DIR}/docker ${NAS_DIR}/data && chown -R ${NAS_USER}:users ${NAS_DIR}"
 
 Write-Host "[2/5] 소스 파일 전송..." -ForegroundColor Cyan
-Invoke-Expression "$SCP convert_pptx.py canva_api.py telegram_bot.py requirements.txt 표지.png ${NAS_USER}@${NAS_HOST}:${NAS_DIR}/"
-Invoke-Expression "$SCP docker/Dockerfile docker/docker-compose.yml ${NAS_USER}@${NAS_HOST}:${NAS_DIR}/docker/"
+nas-scp @("convert_pptx.py","canva_api.py","telegram_bot.py","requirements.txt") "${NAS_DIR}/"
+nas-scp @("docker/Dockerfile","docker/docker-compose.yml") "${NAS_DIR}/docker/"
+
+# 표지.png → cover.png (한글 파일명 인코딩 문제 우회)
+Write-Host "       표지.png → cover.png 전송..." -ForegroundColor Cyan
+$TMP_COVER = [System.IO.Path]::GetTempPath() + "cover.png"
+Copy-Item "표지.png" $TMP_COVER -Force
+nas-scp $TMP_COVER "${NAS_DIR}/cover.png"
+Remove-Item $TMP_COVER
 
 Write-Host "[3/5] Canva 토큰 전송..." -ForegroundColor Cyan
-Invoke-Expression "$SCP $TOKEN_FILE ${NAS_USER}@${NAS_HOST}:${NAS_DIR}/data/.canva_token.json"
+nas-scp ".canva_token.json" "${NAS_DIR}/data/.canva_token.json"
 
 Write-Host "[4/5] .env 생성..." -ForegroundColor Cyan
 $TMP_ENV = [System.IO.Path]::GetTempFileName()
@@ -47,11 +58,11 @@ TELEGRAM_BOT_TOKEN=$env:TELEGRAM_BOT_TOKEN
 CANVA_CLIENT_SECRET=$env:CANVA_CLIENT_SECRET
 DATA_DIR=/app/data
 "@ | Set-Content -Path $TMP_ENV -Encoding UTF8
-Invoke-Expression "$SCP `"$TMP_ENV`" ${NAS_USER}@${NAS_HOST}:${NAS_DIR}/.env"
+nas-scp $TMP_ENV "${NAS_DIR}/.env"
 Remove-Item $TMP_ENV
 
 Write-Host "[5/5] Docker 빌드 및 실행..." -ForegroundColor Cyan
-Invoke-Expression "$SSH `"cd ${NAS_DIR}/docker && sudo /usr/local/bin/docker compose up -d --build`""
+nas-ssh "cd ${NAS_DIR}/docker && sudo /usr/local/bin/docker compose up -d --build"
 
 Write-Host ""
 Write-Host "배포 완료!" -ForegroundColor Green

@@ -6,6 +6,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY convert_pptx.py canva_api.py telegram_bot.py ./
-COPY 표지.png ./
+COPY cover.png ./
 
 CMD ["python", "telegram_bot.py"]

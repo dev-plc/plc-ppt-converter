@@ -29,7 +29,12 @@ from canva_api import upload_pptx
 
 # ── 설정 ──────────────────────────────────────────────────────────────────────
 BOT_TOKEN   = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-COVER_IMAGE = str(Path(__file__).parent / "표지.png")
+# 로컬: 표지.png / Docker: cover.png (한글 파일명 인코딩 우회)
+_BASE = Path(__file__).parent
+COVER_IMAGE = next(
+    (str(_BASE / n) for n in ("cover.png", "표지.png") if (_BASE / n).exists()),
+    None,
+)
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -76,7 +81,7 @@ async def handle_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"❌ 파싱 오류:\n{e}")
             return
 
-        cover = COVER_IMAGE if Path(COVER_IMAGE).exists() else None
+        cover = COVER_IMAGE
         try:
             n = build_after(data, str(output_path), cover_image=cover)
         except Exception as e:
