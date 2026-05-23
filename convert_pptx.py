@@ -172,11 +172,19 @@ def parse_content_slide(slide):
     heading = " ".join(heading_parts)
 
     bullets = []  # List[List[{text, gold}]]
+    content_paras = []
     if content_tf:
-        for para in content_tf.paragraphs:
-            runs = _para_runs(para)
-            if runs:
-                bullets.append(runs)
+        content_paras = [p for p in content_tf.paragraphs if _para_text(p)]
+
+    # 제목 1 shape이 없으면 내용 첫 단락을 heading으로 사용
+    if not heading and content_paras:
+        heading = _para_text(content_paras[0])
+        content_paras = content_paras[1:]
+
+    for para in content_paras:
+        runs = _para_runs(para)
+        if runs:
+            bullets.append(runs)
 
     images = _extract_images(slide)
     return heading, bullets, images
@@ -369,7 +377,7 @@ def build_content_slide(prs, heading: str, bullets: list, images=None, is_contin
 
 
 _CHARS_PER_LINE  = 25   # 28pt에서 슬라이드 너비에 들어가는 한글 글자 수 추정
-_MAX_LINES_SLIDE = 8    # 슬라이드 본문에 들어갈 최대 줄 수
+_MAX_LINES_SLIDE = 7    # 슬라이드 본문에 들어갈 최대 줄 수
 
 def _est_lines(bullet: list) -> int:
     return max(1, math.ceil(len(_bullet_full_text(bullet)) / _CHARS_PER_LINE))
@@ -378,20 +386,38 @@ def _split_bullets(bullets: list, max_per_slide: int) -> list:
     n = len(bullets)
     if n == 0:
         return [bullets]
+    total_lines = sum(_est_lines(b) for b in bullets)
     # 전체 줄 수가 한 슬라이드에 들어오면 분리하지 않음
-    if sum(_est_lines(b) for b in bullets) <= _MAX_LINES_SLIDE:
+    if total_lines <= _MAX_LINES_SLIDE:
         return [bullets]
-    if n <= max_per_slide:
+    # 불렛 2개 이하는 길어도 분리 안 함
+    if n <= 2:
         return [bullets]
-    num_chunks = (n + max_per_slide - 1) // max_per_slide
-    base_size  = n // num_chunks
-    remainder  = n % num_chunks
-    chunks, idx = [], 0
-    for i in range(num_chunks):
-        size = base_size + (1 if i < remainder else 0)
-        chunks.append(bullets[idx : idx + size])
-        idx += size
-    return chunks
+    # 불렛 수가 허용치 초과: 동등 분할
+    if n > max_per_slide:
+        num_chunks = (n + max_per_slide - 1) // max_per_slide
+        base_size  = n // num_chunks
+        remainder  = n % num_chunks
+        chunks, idx = [], 0
+        for i in range(num_chunks):
+            size = base_size + (1 if i < remainder else 0)
+            chunks.append(bullets[idx : idx + size])
+            idx += size
+        return chunks
+    # 불렛 수는 적지만 내용이 길 때: greedy 줄 수 기반 분할
+    target = _MAX_LINES_SLIDE - 2
+    chunks, current, curr_lines = [], [], 0
+    for b in bullets:
+        bl = _est_lines(b)
+        if current and curr_lines + bl > target:
+            chunks.append(current)
+            current, curr_lines = [b], bl
+        else:
+            current.append(b)
+            curr_lines += bl
+    if current:
+        chunks.append(current)
+    return chunks if len(chunks) > 1 else [bullets]
 
 
 def build_after(data: dict, output_path: str, cover_image: str = None):
