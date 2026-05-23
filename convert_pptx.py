@@ -90,9 +90,41 @@ def parse_title_slide(slide):
 
     return series, lecture_title, pastor
 
+import io as _io
+
+_NS_A = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+_NS_R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+
+def _extract_images(slide) -> list:
+    """슬라이드의 모든 이미지를 위치·크기 정보와 함께 추출한다."""
+    images = []
+    for shape in slide.shapes:
+        blips = shape._element.findall(f'.//{{{_NS_A}}}blip')
+        for blip in blips:
+            rId = blip.get(f'{{{_NS_R}}}embed')
+            if rId and rId in slide.part.rels:
+                try:
+                    blob = slide.part.rels[rId].target_part.blob
+                    images.append({
+                        'bytes':  blob,
+                        'left':   shape.left,
+                        'top':    shape.top,
+                        'width':  shape.width,
+                        'height': shape.height,
+                    })
+                except Exception:
+                    pass
+    return images
+
 def parse_content_slide(slide):
-    title_tf   = _tf_by_name(slide, "제목 1")
-    content_tf = _tf_by_name(slide, "내용 개체 틀 2")
+    title_tf = _tf_by_name(slide, "제목 1")
+
+    # "내용 개체 틀 2", "내용 개체 틀 4" 등 번호 무관하게 탐색
+    content_tf = None
+    for shape in slide.shapes:
+        if shape.has_text_frame and shape.name.startswith("내용 개체 틀"):
+            content_tf = shape.text_frame
+            break
 
     heading_parts = []
     if title_tf:
@@ -109,7 +141,8 @@ def parse_content_slide(slide):
             if t:
                 bullets.append(t)
 
-    return heading, bullets
+    images = _extract_images(slide)
+    return heading, bullets, images
 
 def parse_before(path: str) -> dict:
     prs = Presentation(path)
@@ -118,9 +151,9 @@ def parse_before(path: str) -> dict:
 
     content_slides = []
     for slide in all_slides[1:]:
-        heading, bullets = parse_content_slide(slide)
-        if heading or bullets:
-            content_slides.append({"heading": heading, "bullets": bullets})
+        heading, bullets, images = parse_content_slide(slide)
+        if heading or bullets or images:
+            content_slides.append({"heading": heading, "bullets": bullets, "images": images})
 
     return {
         "title": {"series": series, "lecture_title": lecture_title, "pastor": pastor},
@@ -248,7 +281,7 @@ def build_title_slide(prs, series: str, lecture_title: str, pastor: str,
 
     return slide
 
-def build_content_slide(prs, heading: str, bullets: list, is_continued=False):
+def build_content_slide(prs, heading: str, bullets: list, images=None, is_continued=False):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     _solid_bg(slide, BG_COLOR)
 
@@ -302,6 +335,22 @@ def build_content_slide(prs, heading: str, bullets: list, is_continued=False):
         run.font.bold  = True
         run.font.color.rgb = GOLD if is_key else WHITE
 
+    # ── 이미지 삽입 (헤더 아래로 위치 보정)
+    if images:
+        HEADER_H_EMU = int(HEADER_H)
+        for img in images:
+            top    = img['top']
+            height = img['height']
+            # 이미지가 헤더와 겹치면 상단을 헤더 아래로 내림
+            if top < HEADER_H_EMU:
+                shift  = HEADER_H_EMU - top
+                top    = HEADER_H_EMU
+                height = max(height - shift, Emu(914400))  # 최소 1인치
+            slide.shapes.add_picture(
+                _io.BytesIO(img['bytes']),
+                img['left'], top, img['width'], height,
+            )
+
     return slide
 
 
@@ -332,13 +381,17 @@ def build_after(data: dict, output_path: str, cover_image: str = None):
     for cs in data["content_slides"]:
         heading = cs["heading"]
         bullets = cs["bullets"]
+        images  = cs.get("images", [])
 
         if not bullets:
-            build_content_slide(prs, heading, [])
+            build_content_slide(prs, heading, [], images=images)
             continue
 
         for j, chunk in enumerate(_split_bullets(bullets, MAX_BULLETS)):
-            build_content_slide(prs, heading, chunk, is_continued=(j > 0))
+            # 이미지는 첫 번째 청크에만 포함
+            build_content_slide(prs, heading, chunk,
+                                images=(images if j == 0 else None),
+                                is_continued=(j > 0))
 
     prs.save(output_path)
     return len(prs.slides)
