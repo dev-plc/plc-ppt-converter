@@ -10,6 +10,10 @@ after_slides/
 
 # 분석 임시 파일
 analysis_output.txt
+analyze_complete.py
+analyze_deep.py
+analyze_final.py
+extract_images.py
 
 # Python 캐시
 __pycache__/
