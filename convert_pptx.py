@@ -105,8 +105,7 @@ def _has_highlight(run) -> bool:
 
 def _para_runs(para) -> list:
     """단락을 [{text, gold}] run 목록으로 반환.
-    원본에 highlight가 있으면 해당 run → gold=True,
-    없으면 전체 텍스트로 _is_key_term 판별.
+    원본에 <a:highlight>가 있는 run만 gold=True; 없으면 모두 white.
     """
     raw_runs = [r for r in para.runs if r.text]
     if not raw_runs:
@@ -118,7 +117,7 @@ def _para_runs(para) -> list:
         full = _para_text(para)
         if not full:
             return []
-        return [{'text': full, 'gold': _is_key_term(full)}]
+        return [{'text': full, 'gold': False}]
 
     # 인접한 동일 gold 값 run 병합
     merged = []
@@ -199,44 +198,6 @@ def parse_before(path: str) -> dict:
     }
 
 
-# ── 핵심어 판별 (골드 색상 적용 대상) ─────────────────────────────────────────
-
-# 성경 약자 목록
-_BIBLE_ABBRS = (
-    "창|출|레|민|신|수|삿|룻|삼|왕|대|스|느|에|욥|시|잠|전|아|사|렘|애|겔|단"
-    "|호|욜|암|옵|욘|미|나|합|습|학|슥|말"
-    "|마|막|눅|요|행|롬|고|갈|엡|빌|골|살|딤|딛|몬|히|약|벧|유|계"
-)
-_BIBLE_RE = re.compile(rf"(?:{_BIBLE_ABBRS})\s*\d+\s*[：:]\s*\d+")
-
-_OPEN_QUOTES = frozenset([
-    '"',       # U+0022 straight double quote
-    "'",       # U+0027 straight single quote
-    '\u201c',  # LEFT DOUBLE QUOTATION MARK
-    '\u201d',  # RIGHT DOUBLE QUOTATION MARK
-    '\u2018',  # LEFT SINGLE QUOTATION MARK
-    '\u2019',  # RIGHT SINGLE QUOTATION MARK
-    '\u201e',  # DOUBLE LOW-9 QUOTATION MARK
-    '\u00ab',  # LEFT-POINTING DOUBLE ANGLE QUOTATION
-    '\u00bb',  # RIGHT-POINTING DOUBLE ANGLE QUOTATION
-    '\u300c',  # LEFT CORNER BRACKET
-    '\u300e',  # WHITE LEFT CORNER BRACKET
-    '\uff02',  # FULLWIDTH QUOTATION MARK
-    '\uff07',  # FULLWIDTH APOSTROPHE
-])
-
-def _is_key_term(text: str) -> bool:
-    """짧은 단독 핵심어이면 True → 골드 색상 적용"""
-    t = text.strip()
-    if len(t) > 28:
-        return False
-    if t and t[0] in _OPEN_QUOTES:
-        return False
-    if _BIBLE_RE.search(t):
-        return False
-    if t.count("(") + t.count("（") >= 2:
-        return False
-    return True
 
 
 # ── After PPTX 빌더 ───────────────────────────────────────────────────────────
@@ -344,8 +305,8 @@ def build_content_slide(prs, heading: str, bullets: list, images=None, is_contin
     # ── 헤더 배경 박스
     _add_rect(slide, Inches(0), Inches(0), SLIDE_W, HEADER_H, HEADER_BG)
 
-    # ── 헤더 텍스트
-    head_label = heading + (" (계속)" if is_continued else "")
+    # ── 헤더 텍스트 (계속 슬라이드도 동일 제목 사용)
+    head_label = heading
     _add_textbox(
         slide,
         Inches(0.4), Inches(0.12),
