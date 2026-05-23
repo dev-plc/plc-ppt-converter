@@ -26,7 +26,6 @@ from telegram.ext import (
 # ── 로컬 모듈 ─────────────────────────────────────────────────────────────────
 sys.path.insert(0, str(Path(__file__).parent))
 from convert_pptx import parse_before, build_after
-from canva_api import upload_pptx
 
 # ── 설정 ──────────────────────────────────────────────────────────────────────
 BOT_TOKEN   = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -104,20 +103,6 @@ async def handle_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 caption="변환된 PPTX입니다.",
             )
 
-        # ── Canva 업로드 (blocking → 별도 스레드에서 실행) ───────────────────────
-        await update.message.reply_text("☁️ Canva에 업로드 중...")
-        try:
-            canva_url = await asyncio.to_thread(
-                upload_pptx, str(output_path), False
-            )
-            await update.message.reply_text(
-                f"🎨 Canva 편집 링크:\n{canva_url}"
-            )
-        except Exception as e:
-            await update.message.reply_text(
-                f"⚠️ Canva 업로드 실패:\n{e}\n\n"
-                "PPTX는 위에서 받으실 수 있습니다."
-            )
 
 
 async def handle_other(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
