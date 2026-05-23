@@ -8,6 +8,7 @@ Usage:
 import sys
 import io
 import re
+import math
 import os
 import argparse
 
@@ -95,6 +96,43 @@ import io as _io
 _NS_A = 'http://schemas.openxmlformats.org/drawingml/2006/main'
 _NS_R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 
+def _has_highlight(run) -> bool:
+    """run에 <a:highlight> 요소가 있으면 True"""
+    rPr = run._r.find(f'{{{_NS_A}}}rPr')
+    if rPr is None:
+        return False
+    return rPr.find(f'{{{_NS_A}}}highlight') is not None
+
+def _para_runs(para) -> list:
+    """단락을 [{text, gold}] run 목록으로 반환.
+    원본에 highlight가 있으면 해당 run → gold=True,
+    없으면 전체 텍스트로 _is_key_term 판별.
+    """
+    raw_runs = [r for r in para.runs if r.text]
+    if not raw_runs:
+        return []
+
+    any_hl = any(_has_highlight(r) for r in raw_runs)
+
+    if not any_hl:
+        full = _para_text(para)
+        if not full:
+            return []
+        return [{'text': full, 'gold': _is_key_term(full)}]
+
+    # 인접한 동일 gold 값 run 병합
+    merged = []
+    for run in raw_runs:
+        gold = _has_highlight(run)
+        if merged and merged[-1]['gold'] == gold:
+            merged[-1]['text'] += run.text
+        else:
+            merged.append({'text': run.text, 'gold': gold})
+    return [r for r in merged if r['text']]
+
+def _bullet_full_text(bullet: list) -> str:
+    return ''.join(r['text'] for r in bullet)
+
 def _extract_images(slide) -> list:
     """슬라이드의 모든 이미지를 위치·크기 정보와 함께 추출한다."""
     images = []
@@ -134,12 +172,12 @@ def parse_content_slide(slide):
                 heading_parts.append(t)
     heading = " ".join(heading_parts)
 
-    bullets = []
+    bullets = []  # List[List[{text, gold}]]
     if content_tf:
         for para in content_tf.paragraphs:
-            t = _para_text(para)
-            if t:
-                bullets.append(t)
+            runs = _para_runs(para)
+            if runs:
+                bullets.append(runs)
 
     images = _extract_images(slide)
     return heading, bullets, images
@@ -171,12 +209,28 @@ _BIBLE_ABBRS = (
 )
 _BIBLE_RE = re.compile(rf"(?:{_BIBLE_ABBRS})\s*\d+\s*[：:]\s*\d+")
 
+_OPEN_QUOTES = frozenset([
+    '"',       # U+0022 straight double quote
+    "'",       # U+0027 straight single quote
+    '\u201c',  # LEFT DOUBLE QUOTATION MARK
+    '\u201d',  # RIGHT DOUBLE QUOTATION MARK
+    '\u2018',  # LEFT SINGLE QUOTATION MARK
+    '\u2019',  # RIGHT SINGLE QUOTATION MARK
+    '\u201e',  # DOUBLE LOW-9 QUOTATION MARK
+    '\u00ab',  # LEFT-POINTING DOUBLE ANGLE QUOTATION
+    '\u00bb',  # RIGHT-POINTING DOUBLE ANGLE QUOTATION
+    '\u300c',  # LEFT CORNER BRACKET
+    '\u300e',  # WHITE LEFT CORNER BRACKET
+    '\uff02',  # FULLWIDTH QUOTATION MARK
+    '\uff07',  # FULLWIDTH APOSTROPHE
+])
+
 def _is_key_term(text: str) -> bool:
     """짧은 단독 핵심어이면 True → 골드 색상 적용"""
     t = text.strip()
     if len(t) > 28:
         return False
-    if t and t[0] in ('"', '"', '"', "'", "'", "'", "「", "『", "＂"):
+    if t and t[0] in _OPEN_QUOTES:
         return False
     if _BIBLE_RE.search(t):
         return False
@@ -315,25 +369,24 @@ def build_content_slide(prs, heading: str, bullets: list, images=None, is_contin
     _MARL   =  int(Inches(0.52))   # 두 번째 줄 시작 위치 (EMU)
     _INDENT = -int(Inches(0.52))   # 첫 줄 = marL + indent = 0 위치
 
-    for i, bullet_text in enumerate(bullets):
+    for i, bullet in enumerate(bullets):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         p.alignment    = PP_ALIGN.LEFT
         p.space_before = Pt(22)
         p.space_after  = Pt(4)
 
-        # hanging indent XML 적용
         pPr = p._p.get_or_add_pPr()
         pPr.set("marL",   str(_MARL))
         pPr.set("indent", str(_INDENT))
 
-        run = p.add_run()
-        run.text = f"-  {bullet_text}"
-
-        is_key = _is_key_term(bullet_text)
-        run.font.name  = FONT_NOTO
-        run.font.size  = Pt(28)
-        run.font.bold  = True
-        run.font.color.rgb = GOLD if is_key else WHITE
+        # run별 색상 처리
+        for j, rd in enumerate(bullet):
+            run = p.add_run()
+            run.text = ("-  " + rd['text']) if j == 0 else rd['text']
+            run.font.name  = FONT_NOTO
+            run.font.size  = Pt(28)
+            run.font.bold  = True
+            run.font.color.rgb = GOLD if rd['gold'] else WHITE
 
     # ── 이미지 삽입 (헤더 아래로 위치 보정)
     if images:
@@ -354,8 +407,19 @@ def build_content_slide(prs, heading: str, bullets: list, images=None, is_contin
     return slide
 
 
+_CHARS_PER_LINE  = 25   # 28pt에서 슬라이드 너비에 들어가는 한글 글자 수 추정
+_MAX_LINES_SLIDE = 8    # 슬라이드 본문에 들어갈 최대 줄 수
+
+def _est_lines(bullet: list) -> int:
+    return max(1, math.ceil(len(_bullet_full_text(bullet)) / _CHARS_PER_LINE))
+
 def _split_bullets(bullets: list, max_per_slide: int) -> list:
     n = len(bullets)
+    if n == 0:
+        return [bullets]
+    # 전체 줄 수가 한 슬라이드에 들어오면 분리하지 않음
+    if sum(_est_lines(b) for b in bullets) <= _MAX_LINES_SLIDE:
+        return [bullets]
     if n <= max_per_slide:
         return [bullets]
     num_chunks = (n + max_per_slide - 1) // max_per_slide
