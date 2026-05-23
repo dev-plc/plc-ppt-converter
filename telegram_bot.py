@@ -13,6 +13,7 @@ PPTX 파일을 받아 변환 후 Canva에 업로드하고 결과를 돌려줍니
 import os
 import sys
 import logging
+import asyncio
 import tempfile
 from pathlib import Path
 
@@ -74,16 +75,17 @@ async def handle_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         tg_file = await ctx.bot.get_file(doc.file_id)
         await tg_file.download_to_drive(str(input_path))
 
-        # ── 변환 ──────────────────────────────────────────────────────────────
+        # ── 변환 (blocking → 별도 스레드에서 실행) ────────────────────────────
         try:
-            data = parse_before(str(input_path))
+            data = await asyncio.to_thread(parse_before, str(input_path))
         except Exception as e:
             await update.message.reply_text(f"❌ 파싱 오류:\n{e}")
             return
 
-        cover = COVER_IMAGE
         try:
-            n = build_after(data, str(output_path), cover_image=cover)
+            n = await asyncio.to_thread(
+                build_after, data, str(output_path), COVER_IMAGE
+            )
         except Exception as e:
             await update.message.reply_text(f"❌ 변환 오류:\n{e}")
             return
@@ -102,14 +104,16 @@ async def handle_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 caption="변환된 PPTX입니다.",
             )
 
-        # ── Canva 업로드 ──────────────────────────────────────────────────────
+        # ── Canva 업로드 (blocking → 별도 스레드에서 실행) ───────────────────────
         await update.message.reply_text("☁️ Canva에 업로드 중...")
         try:
-            canva_url = upload_pptx(str(output_path), verbose=False)
+            canva_url = await asyncio.to_thread(
+                upload_pptx, str(output_path), False
+            )
             await update.message.reply_text(
                 f"🎨 Canva 편집 링크:\n{canva_url}"
             )
-        except RuntimeError as e:
+        except Exception as e:
             await update.message.reply_text(
                 f"⚠️ Canva 업로드 실패:\n{e}\n\n"
                 "PPTX는 위에서 받으실 수 있습니다."
