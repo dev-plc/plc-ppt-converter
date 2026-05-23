@@ -396,14 +396,17 @@ def main():
     print(f"      목사  : {t['pastor']}")
     print(f"      내용 슬라이드: {len(data['content_slides'])}개 (분리 전)")
 
-    # 표지 이미지: 스크립트와 같은 폴더의 표지.png 자동 탐색
+    # 표지 이미지: cover.png → 표지.png 순으로 탐색
     script_dir  = os.path.dirname(os.path.abspath(__file__))
-    cover_image = os.path.join(script_dir, "표지.png")
-    if os.path.exists(cover_image):
+    cover_image = next(
+        (os.path.join(script_dir, n) for n in ("cover.png", "표지.png")
+         if os.path.exists(os.path.join(script_dir, n))),
+        None,
+    )
+    if cover_image:
         print(f"[2/3] 변환 중... (표지 이미지 적용)")
     else:
-        cover_image = None
-        print(f"[2/3] 변환 중... (표지.png 없음, 기본 배경 사용)")
+        print(f"[2/3] 변환 중... (표지 이미지 없음, 기본 배경 사용)")
 
     n = build_after(data, out_path, cover_image=cover_image)
     print(f"[3/3] 완료 → {os.path.basename(out_path)}  ({n} 슬라이드)")

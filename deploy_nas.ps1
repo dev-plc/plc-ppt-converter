@@ -41,17 +41,8 @@ Write-Host "[2/5] 소스 파일 전송..." -ForegroundColor Cyan
 nas-scp @("convert_pptx.py","canva_api.py","telegram_bot.py","requirements.txt") "${NAS_DIR}/"
 nas-scp @("docker/Dockerfile","docker/docker-compose.yml") "${NAS_DIR}/docker/"
 
-# 표지.png → cover.png (한글 파일명 인코딩 문제 우회)
-Write-Host "       표지.png → cover.png 전송..." -ForegroundColor Cyan
-$TMP_COVER = [System.IO.Path]::GetTempPath() + "cover.png"
-$SRC_COVER = [System.IO.Path]::Combine($PWD.Path, "표지.png")
-if (-not [System.IO.File]::Exists($SRC_COVER)) {
-    Write-Error "표지.png 파일을 찾을 수 없습니다: $SRC_COVER"
-    exit 1
-}
-[System.IO.File]::Copy($SRC_COVER, $TMP_COVER, $true)
-nas-scp $TMP_COVER "${NAS_DIR}/cover.png"
-[System.IO.File]::Delete($TMP_COVER)
+Write-Host "       cover.png 전송..." -ForegroundColor Cyan
+nas-scp "cover.png" "${NAS_DIR}/cover.png"
 
 Write-Host "[3/5] Canva 토큰 전송..." -ForegroundColor Cyan
 nas-scp ".canva_token.json" "${NAS_DIR}/data/.canva_token.json"
