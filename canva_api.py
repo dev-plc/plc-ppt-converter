@@ -30,7 +30,7 @@ from pathlib import Path
 CLIENT_ID     = "OC-AZ5O0t4gEaqt"
 CLIENT_SECRET = os.environ.get("CANVA_CLIENT_SECRET", "")
 REDIRECT_URI = "http://127.0.0.1:8080/callback"
-SCOPES       = "design:content:write design:content:read asset:write profile:read"
+SCOPES       = "design:content:write design:content:read asset:write profile:read offline_access"
 
 AUTH_URL     = "https://www.canva.com/api/oauth/authorize"
 TOKEN_URL    = "https://api.canva.com/rest/v1/oauth/token"
