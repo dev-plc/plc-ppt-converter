@@ -266,16 +266,16 @@ def upload_pptx(pptx_path: str, verbose: bool = True) -> str:
     with open(path, "rb") as f:
         file_bytes = f.read()
 
-    # 방법 1: raw body (Content-Type = PPTX MIME)
+    # 파일명 ASCII 변환 (한글 파일명 인코딩 문제 우회)
+    safe_name = path.stem.encode("ascii", errors="ignore").decode() or "presentation"
+    safe_name = (safe_name.strip() or "presentation") + ".pptx"
+
+    # 방법 1: raw body
     resp = httpx.post(
         f"{API_BASE}/imports",
         headers={
-            "Authorization":   f"Bearer {access_token}",
-            "Content-Type":    mime_type,
-            "Import-Metadata": json.dumps({
-                "title":     path.stem,
-                "mime_type": mime_type,
-            }),
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type":  mime_type,
         },
         content=file_bytes,
         timeout=60,
@@ -286,13 +286,9 @@ def upload_pptx(pptx_path: str, verbose: bool = True) -> str:
         resp = httpx.post(
             f"{API_BASE}/imports",
             headers={
-                "Authorization":   f"Bearer {access_token}",
-                "Import-Metadata": json.dumps({
-                    "title":     path.stem,
-                    "mime_type": mime_type,
-                }),
+                "Authorization": f"Bearer {access_token}",
             },
-            files={"asset_upload": (path.name, file_bytes, mime_type)},
+            files={"asset_upload": (safe_name, file_bytes, mime_type)},
             timeout=60,
         )
 
