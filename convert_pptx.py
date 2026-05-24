@@ -8,6 +8,7 @@ Usage:
 import sys
 import io
 import re
+import math
 import os
 import argparse
 
@@ -90,9 +91,79 @@ def parse_title_slide(slide):
 
     return series, lecture_title, pastor
 
-def parse_content_slide(slide):
-    title_tf   = _tf_by_name(slide, "제목 1")
-    content_tf = _tf_by_name(slide, "내용 개체 틀 2")
+import io as _io
+
+_NS_A = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+_NS_R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+
+def _has_highlight(run) -> bool:
+    """run에 <a:highlight> 요소가 있으면 True"""
+    rPr = run._r.find(f'{{{_NS_A}}}rPr')
+    if rPr is None:
+        return False
+    return rPr.find(f'{{{_NS_A}}}highlight') is not None
+
+def _para_runs(para) -> list:
+    """단락을 [{text, gold}] run 목록으로 반환.
+    원본에 <a:highlight>가 있는 run만 gold=True; 없으면 모두 white.
+    """
+    raw_runs = [r for r in para.runs if r.text]
+    if not raw_runs:
+        return []
+
+    any_hl = any(_has_highlight(r) for r in raw_runs)
+
+    if not any_hl:
+        full = _para_text(para)
+        if not full:
+            return []
+        return [{'text': full, 'gold': False}]
+
+    # 인접한 동일 gold 값 run 병합
+    merged = []
+    for run in raw_runs:
+        gold = _has_highlight(run)
+        if merged and merged[-1]['gold'] == gold:
+            merged[-1]['text'] += run.text
+        else:
+            merged.append({'text': run.text, 'gold': gold})
+    return [r for r in merged if r['text']]
+
+def _bullet_full_text(bullet: list) -> str:
+    return ''.join(r['text'] for r in bullet)
+
+def _extract_images(slide, scale_x=1.0, scale_y=1.0) -> list:
+    """슬라이드의 모든 이미지를 위치·크기 정보와 함께 추출한다.
+    scale_x/y: 소스 슬라이드 → After 슬라이드 좌표 변환 비율.
+    """
+    images = []
+    for shape in slide.shapes:
+        blips = shape._element.findall(f'.//{{{_NS_A}}}blip')
+        for blip in blips:
+            rId = blip.get(f'{{{_NS_R}}}embed')
+            if rId and rId in slide.part.rels:
+                try:
+                    blob = slide.part.rels[rId].target_part.blob
+                    images.append({
+                        'bytes':  blob,
+                        'left':   int(shape.left   * scale_x),
+                        'top':    int(shape.top    * scale_y),
+                        'width':  int(shape.width  * scale_x),
+                        'height': int(shape.height * scale_y),
+                    })
+                except Exception:
+                    pass
+    return images
+
+def parse_content_slide(slide, scale_x=1.0, scale_y=1.0):
+    title_tf = _tf_by_name(slide, "제목 1")
+
+    # "내용 개체 틀 2", "내용 개체 틀 4" 등 번호 무관하게 탐색
+    content_tf = None
+    for shape in slide.shapes:
+        if shape.has_text_frame and shape.name.startswith("내용 개체 틀"):
+            content_tf = shape.text_frame
+            break
 
     heading_parts = []
     if title_tf:
@@ -102,25 +173,40 @@ def parse_content_slide(slide):
                 heading_parts.append(t)
     heading = " ".join(heading_parts)
 
-    bullets = []
+    bullets = []  # List[List[{text, gold}]]
+    content_paras = []
     if content_tf:
-        for para in content_tf.paragraphs:
-            t = _para_text(para)
-            if t:
-                bullets.append(t)
+        content_paras = [p for p in content_tf.paragraphs if _para_text(p)]
 
-    return heading, bullets
+    # 제목 1 shape이 없으면 내용 첫 단락을 heading으로 사용
+    if not heading and content_paras:
+        heading = _para_text(content_paras[0])
+        content_paras = content_paras[1:]
+
+    for para in content_paras:
+        runs = _para_runs(para)
+        if runs:
+            bullets.append(runs)
+
+    images = _extract_images(slide, scale_x, scale_y)
+    return heading, bullets, images
 
 def parse_before(path: str) -> dict:
     prs = Presentation(path)
     all_slides = list(prs.slides)
+
+    # 소스 슬라이드 크기가 After 기준(SLIDE_W×SLIDE_H)과 다를 경우 좌표 스케일링
+    scale_x = int(SLIDE_W) / int(prs.slide_width)
+    scale_y = int(SLIDE_H) / int(prs.slide_height)
+
     series, lecture_title, pastor = parse_title_slide(all_slides[0])
 
     content_slides = []
     for slide in all_slides[1:]:
-        heading, bullets = parse_content_slide(slide)
+        heading, bullets, images = parse_content_slide(slide, scale_x, scale_y)
+        # 텍스트가 전혀 없는 슬라이드는 스킵 (이미 변환된 파일 등 이미지 전용 슬라이드)
         if heading or bullets:
-            content_slides.append({"heading": heading, "bullets": bullets})
+            content_slides.append({"heading": heading, "bullets": bullets, "images": images})
 
     return {
         "title": {"series": series, "lecture_title": lecture_title, "pastor": pastor},
@@ -128,28 +214,6 @@ def parse_before(path: str) -> dict:
     }
 
 
-# ── 핵심어 판별 (골드 색상 적용 대상) ─────────────────────────────────────────
-
-# 성경 약자 목록
-_BIBLE_ABBRS = (
-    "창|출|레|민|신|수|삿|룻|삼|왕|대|스|느|에|욥|시|잠|전|아|사|렘|애|겔|단"
-    "|호|욜|암|옵|욘|미|나|합|습|학|슥|말"
-    "|마|막|눅|요|행|롬|고|갈|엡|빌|골|살|딤|딛|몬|히|약|벧|유|계"
-)
-_BIBLE_RE = re.compile(rf"(?:{_BIBLE_ABBRS})\s*\d+\s*[：:]\s*\d+")
-
-def _is_key_term(text: str) -> bool:
-    """짧은 단독 핵심어이면 True → 골드 색상 적용"""
-    t = text.strip()
-    if len(t) > 28:
-        return False
-    if t and t[0] in ('"', '"', '"', "'", "'", "'", "「", "『", "＂"):
-        return False
-    if _BIBLE_RE.search(t):
-        return False
-    if t.count("(") + t.count("（") >= 2:
-        return False
-    return True
 
 
 # ── After PPTX 빌더 ───────────────────────────────────────────────────────────
@@ -248,7 +312,7 @@ def build_title_slide(prs, series: str, lecture_title: str, pastor: str,
 
     return slide
 
-def build_content_slide(prs, heading: str, bullets: list, is_continued=False):
+def build_content_slide(prs, heading: str, bullets: list, images=None, is_continued=False):
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     _solid_bg(slide, BG_COLOR)
 
@@ -257,8 +321,8 @@ def build_content_slide(prs, heading: str, bullets: list, is_continued=False):
     # ── 헤더 배경 박스
     _add_rect(slide, Inches(0), Inches(0), SLIDE_W, HEADER_H, HEADER_BG)
 
-    # ── 헤더 텍스트
-    head_label = heading + (" (계속)" if is_continued else "")
+    # ── 헤더 텍스트 (계속 슬라이드도 동일 제목 사용)
+    head_label = heading
     _add_textbox(
         slide,
         Inches(0.4), Inches(0.12),
@@ -282,42 +346,86 @@ def build_content_slide(prs, heading: str, bullets: list, is_continued=False):
     _MARL   =  int(Inches(0.52))   # 두 번째 줄 시작 위치 (EMU)
     _INDENT = -int(Inches(0.52))   # 첫 줄 = marL + indent = 0 위치
 
-    for i, bullet_text in enumerate(bullets):
+    for i, bullet in enumerate(bullets):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         p.alignment    = PP_ALIGN.LEFT
         p.space_before = Pt(22)
         p.space_after  = Pt(4)
 
-        # hanging indent XML 적용
         pPr = p._p.get_or_add_pPr()
         pPr.set("marL",   str(_MARL))
         pPr.set("indent", str(_INDENT))
 
-        run = p.add_run()
-        run.text = f"-  {bullet_text}"
+        # run별 색상 처리
+        for j, rd in enumerate(bullet):
+            run = p.add_run()
+            run.text = ("-  " + rd['text']) if j == 0 else rd['text']
+            run.font.name  = FONT_NOTO
+            run.font.size  = Pt(28)
+            run.font.bold  = True
+            run.font.color.rgb = GOLD if rd['gold'] else WHITE
 
-        is_key = _is_key_term(bullet_text)
-        run.font.name  = FONT_NOTO
-        run.font.size  = Pt(28)
-        run.font.bold  = True
-        run.font.color.rgb = GOLD if is_key else WHITE
+    # ── 이미지 삽입 (헤더 아래로 위치 보정)
+    if images:
+        HEADER_H_EMU = int(HEADER_H)
+        for img in images:
+            top    = img['top']
+            height = img['height']
+            # 이미지가 헤더와 겹치면 상단을 헤더 아래로 내림
+            if top < HEADER_H_EMU:
+                shift  = HEADER_H_EMU - top
+                top    = HEADER_H_EMU
+                height = max(height - shift, Emu(914400))  # 최소 1인치
+            slide.shapes.add_picture(
+                _io.BytesIO(img['bytes']),
+                img['left'], top, img['width'], height,
+            )
 
     return slide
 
 
+_CHARS_PER_LINE  = 25   # 28pt에서 슬라이드 너비에 들어가는 한글 글자 수 추정
+_MAX_LINES_SLIDE = 7    # 슬라이드 본문에 들어갈 최대 줄 수
+
+def _est_lines(bullet: list) -> int:
+    return max(1, math.ceil(len(_bullet_full_text(bullet)) / _CHARS_PER_LINE))
+
 def _split_bullets(bullets: list, max_per_slide: int) -> list:
     n = len(bullets)
-    if n <= max_per_slide:
+    if n == 0:
         return [bullets]
-    num_chunks = (n + max_per_slide - 1) // max_per_slide
-    base_size  = n // num_chunks
-    remainder  = n % num_chunks
-    chunks, idx = [], 0
-    for i in range(num_chunks):
-        size = base_size + (1 if i < remainder else 0)
-        chunks.append(bullets[idx : idx + size])
-        idx += size
-    return chunks
+    total_lines = sum(_est_lines(b) for b in bullets)
+    # 전체 줄 수가 한 슬라이드에 들어오면 분리하지 않음
+    if total_lines <= _MAX_LINES_SLIDE:
+        return [bullets]
+    # 불렛 2개 이하는 길어도 분리 안 함
+    if n <= 2:
+        return [bullets]
+    # 불렛 수가 허용치 초과: 동등 분할
+    if n > max_per_slide:
+        num_chunks = (n + max_per_slide - 1) // max_per_slide
+        base_size  = n // num_chunks
+        remainder  = n % num_chunks
+        chunks, idx = [], 0
+        for i in range(num_chunks):
+            size = base_size + (1 if i < remainder else 0)
+            chunks.append(bullets[idx : idx + size])
+            idx += size
+        return chunks
+    # 불렛 수는 적지만 내용이 길 때: greedy 줄 수 기반 분할
+    target = _MAX_LINES_SLIDE - 2
+    chunks, current, curr_lines = [], [], 0
+    for b in bullets:
+        bl = _est_lines(b)
+        if current and curr_lines + bl > target:
+            chunks.append(current)
+            current, curr_lines = [b], bl
+        else:
+            current.append(b)
+            curr_lines += bl
+    if current:
+        chunks.append(current)
+    return chunks if len(chunks) > 1 else [bullets]
 
 
 def build_after(data: dict, output_path: str, cover_image: str = None):
@@ -332,13 +440,17 @@ def build_after(data: dict, output_path: str, cover_image: str = None):
     for cs in data["content_slides"]:
         heading = cs["heading"]
         bullets = cs["bullets"]
+        images  = cs.get("images", [])
 
         if not bullets:
-            build_content_slide(prs, heading, [])
+            build_content_slide(prs, heading, [], images=images)
             continue
 
         for j, chunk in enumerate(_split_bullets(bullets, MAX_BULLETS)):
-            build_content_slide(prs, heading, chunk, is_continued=(j > 0))
+            # 이미지는 첫 번째 청크에만 포함
+            build_content_slide(prs, heading, chunk,
+                                images=(images if j == 0 else None),
+                                is_continued=(j > 0))
 
     prs.save(output_path)
     return len(prs.slides)
@@ -378,6 +490,8 @@ def main():
     parser.add_argument("--png", action="store_true",
                         help="변환 후 PNG 내보내기 (PowerPoint 필요)")
     parser.add_argument("--png-dir",       help="PNG 저장 폴더")
+    parser.add_argument("--canva", action="store_true",
+                        help="변환 후 Canva에 자동 업로드 (canva_api.py 인증 필요)")
     args = parser.parse_args()
 
     if not os.path.exists(args.input):
@@ -394,14 +508,17 @@ def main():
     print(f"      목사  : {t['pastor']}")
     print(f"      내용 슬라이드: {len(data['content_slides'])}개 (분리 전)")
 
-    # 표지 이미지: 스크립트와 같은 폴더의 표지.png 자동 탐색
+    # 표지 이미지: cover.png → 표지.png 순으로 탐색
     script_dir  = os.path.dirname(os.path.abspath(__file__))
-    cover_image = os.path.join(script_dir, "표지.png")
-    if os.path.exists(cover_image):
+    cover_image = next(
+        (os.path.join(script_dir, n) for n in ("cover.png", "표지.png")
+         if os.path.exists(os.path.join(script_dir, n))),
+        None,
+    )
+    if cover_image:
         print(f"[2/3] 변환 중... (표지 이미지 적용)")
     else:
-        cover_image = None
-        print(f"[2/3] 변환 중... (표지.png 없음, 기본 배경 사용)")
+        print(f"[2/3] 변환 중... (표지 이미지 없음, 기본 배경 사용)")
 
     n = build_after(data, out_path, cover_image=cover_image)
     print(f"[3/3] 완료 → {os.path.basename(out_path)}  ({n} 슬라이드)")
@@ -410,6 +527,15 @@ def main():
         png_dir = args.png_dir or os.path.splitext(out_path)[0] + "_slides"
         print(f"[+]  PNG 내보내기 → {png_dir}")
         export_png(out_path, png_dir)
+
+    if args.canva:
+        try:
+            from canva_api import upload_pptx
+            upload_pptx(out_path, verbose=True)
+        except ImportError:
+            print("오류: canva_api.py 파일이 없습니다.")
+        except RuntimeError as e:
+            print(f"Canva 업로드 오류: {e}")
 
 
 if __name__ == "__main__":

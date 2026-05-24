@@ -1,76 +1,197 @@
-"""PPTX 구조 분석 스크립트 - before/after 파일 비교용"""
+#!/usr/bin/env python3
+"""
+Detailed PPTX analysis script.
+Analyzes Original, Converted, and Complete PPTX files.
+"""
 import sys
-import io
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-
 from pptx import Presentation
 from pptx.util import Pt
 from pptx.dml.color import RGBColor
+from lxml import etree
 
-def rgb_to_hex(rgb):
-    if rgb is None:
-        return None
-    return f"#{rgb[0]:02X}{rgb[1]:02X}{rgb[2]:02X}"
+BASE = "/root/.claude/uploads/13f911f1-87ab-4d0f-85c1-4235e95894e6"
+ORIG_PATH  = f"{BASE}/432e161a-_____1_Original.pptx"
+CONV_PATH  = f"{BASE}/ce5cf320-_____1__converted_7.pptx"
+COMP_PATH  = f"{BASE}/4adf2458-_____1_Complete.pptx"
 
-def analyze_pptx(path):
-    prs = Presentation(path)
-    w = prs.slide_width.inches
-    h = prs.slide_height.inches
-    print(f"\n=== {path} ===")
-    print(f"슬라이드 크기: {w:.2f}\" x {h:.2f}\" ({prs.slide_width.emu} x {prs.slide_height.emu} EMU)")
-    print(f"슬라이드 수: {len(prs.slides)}")
+NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 
-    for i, slide in enumerate(prs.slides):
-        print(f"\n--- 슬라이드 {i+1} ---")
-        bg = slide.background
-        fill = bg.fill
-        print(f"  배경 fill type: {fill.type}")
-        try:
-            if fill.fore_color and fill.fore_color.rgb:
-                print(f"  배경색: {rgb_to_hex(fill.fore_color.rgb)}")
-        except:
-            pass
+def rgb_hex(color_obj):
+    """Return hex string or None."""
+    try:
+        if color_obj and color_obj.type is not None:
+            rgb = color_obj.rgb
+            return f"#{rgb.red:02X}{rgb.green:02X}{rgb.blue:02X}"
+    except Exception:
+        pass
+    return None
 
-        for j, shape in enumerate(slide.shapes):
-            print(f"  [Shape {j}] name={shape.name!r} type={shape.shape_type} "
-                  f"left={shape.left} top={shape.top} w={shape.width} h={shape.height}")
+def run_detail(run):
+    font = run.font
+    color = rgb_hex(font.color)
+    size = int(font.size.pt) if font.size else None
+    # Check highlight in XML
+    hl_val = None
+    try:
+        rpr = run._r.find(f"{{{NS}}}rPr")
+        if rpr is not None:
+            hl = rpr.find(f"{{{NS}}}highlight")
+            if hl is not None:
+                hl_val = hl.get("val")
+    except Exception:
+        pass
+    return {
+        "text": run.text,
+        "bold": font.bold,
+        "italic": font.italic,
+        "underline": font.underline,
+        "color": color,
+        "size": size,
+        "highlight": hl_val,
+    }
 
-            try:
-                sf = shape.fill
-                if sf.type is not None:
-                    try:
-                        print(f"    fill_type={sf.type} color={rgb_to_hex(sf.fore_color.rgb)}")
-                    except:
-                        print(f"    fill_type={sf.type}")
-            except:
-                pass
+def format_run(r):
+    parts = []
+    if r["bold"]: parts.append("BOLD")
+    if r["underline"]: parts.append("UL")
+    if r["color"]: parts.append(f"color={r['color']}")
+    if r["highlight"]: parts.append(f"HL={r['highlight']}")
+    if r["size"]: parts.append(f"{r['size']}pt")
+    desc = ", ".join(parts)
+    return f"[{r['text']!r} | {desc}]"
 
-            if shape.has_text_frame:
-                tf = shape.text_frame
-                for k, para in enumerate(tf.paragraphs):
-                    for run in para.runs:
-                        font = run.font
-                        try:
-                            color = rgb_to_hex(font.color.rgb) if font.color and font.color.type else None
-                        except:
-                            color = None
-                        size = round(font.size.pt, 1) if font.size else None
-                        bold = font.bold
-                        italic = font.italic
-                        name = font.name
-                        text = run.text[:60] if run.text else ""
-                        if text.strip():
-                            print(f"    para[{k}] run: font={name!r} size={size}pt bold={bold} italic={italic} "
-                                  f"color={color} | {text!r}")
+# ─────────────────────────────────────────────────────────────
+# SECTION 1: Slide counts
+# ─────────────────────────────────────────────────────────────
+print("=" * 70)
+print("SECTION 1: SLIDE COUNTS")
+print("=" * 70)
 
-if __name__ == "__main__":
-    base = r"C:\Users\myc43\OneDrive - ETERNAL LIBRTY POLICY INSTITUTE\바탕 화면\plc ppt"
-    files = [
-        f"{base}\\에베소서 제4강(before).pptx",
-        f"{base}\\에베소서 제4강(after).pptx",
-    ]
-    for f in files:
-        try:
-            analyze_pptx(f)
-        except Exception as e:
-            print(f"오류: {f}: {e}")
+prs_orig = Presentation(ORIG_PATH)
+prs_conv = Presentation(CONV_PATH)
+prs_comp = Presentation(COMP_PATH)
+
+print(f"Original  : {len(prs_orig.slides)} slides")
+print(f"Converted : {len(prs_conv.slides)} slides")
+print(f"Complete  : {len(prs_comp.slides)} slides")
+
+# ─────────────────────────────────────────────────────────────
+# SECTION 2: Original slide 9 — all shapes, full run detail
+# ─────────────────────────────────────────────────────────────
+print()
+print("=" * 70)
+print("SECTION 2: ORIGINAL SLIDE 9 — FULL SHAPE & RUN ANALYSIS")
+print("=" * 70)
+
+slide9 = prs_orig.slides[8]  # 0-indexed
+for si, shape in enumerate(slide9.shapes):
+    print(f"\n  [Shape {si}] name='{shape.name}'  has_tf={shape.has_text_frame}")
+    if shape.has_text_frame:
+        for pi, para in enumerate(shape.text_frame.paragraphs):
+            para_text = para.text
+            if not para_text.strip() and not para.runs:
+                print(f"    Para {pi}: <empty>")
+                continue
+            print(f"    Para {pi}: '{para_text}'")
+            for ri, run in enumerate(para.runs):
+                info = run_detail(run)
+                print(f"      Run {ri}: {format_run(info)}")
+
+# ─────────────────────────────────────────────────────────────
+# SECTION 3: Converted vs Complete — ALL slides side by side
+# ─────────────────────────────────────────────────────────────
+print()
+print("=" * 70)
+print("SECTION 3: CONVERTED vs COMPLETE — SLIDE-BY-SLIDE")
+print("=" * 70)
+
+def slide_summary(slide, label, idx):
+    print(f"  [{label} Slide {idx+1}]")
+    for shape in slide.shapes:
+        if not shape.has_text_frame:
+            continue
+        tf = shape.text_frame
+        for para in tf.paragraphs:
+            t = para.text.strip()
+            if not t:
+                continue
+            runs_str = "  ".join(format_run(run_detail(r)) for r in para.runs if r.text)
+            print(f"    [{shape.name}] '{t}'")
+            if runs_str:
+                print(f"      {runs_str}")
+
+n_conv = len(prs_conv.slides)
+n_comp = len(prs_comp.slides)
+max_n = max(n_conv, n_comp)
+
+for idx in range(max_n):
+    print(f"\n{'─'*70}")
+    print(f"  SLIDE PAIR {idx+1}")
+    print(f"{'─'*70}")
+    if idx < n_conv:
+        slide_summary(prs_conv.slides[idx], "CONVERTED", idx)
+    else:
+        print(f"  [CONVERTED Slide {idx+1}]: *** DOES NOT EXIST ***")
+    print()
+    if idx < n_comp:
+        slide_summary(prs_comp.slides[idx], "COMPLETE", idx)
+    else:
+        print(f"  [COMPLETE  Slide {idx+1}]: *** DOES NOT EXIST ***")
+
+# ─────────────────────────────────────────────────────────────
+# SECTION 4: Complete — color pattern summary
+# ─────────────────────────────────────────────────────────────
+print()
+print("=" * 70)
+print("SECTION 4: COMPLETE VERSION — GOLD vs WHITE COLOR PATTERN")
+print("=" * 70)
+
+for si, slide in enumerate(prs_comp.slides):
+    gold_texts = []
+    white_texts = []
+    other_texts = []
+    for shape in slide.shapes:
+        if not shape.has_text_frame:
+            continue
+        for para in shape.text_frame.paragraphs:
+            for run in para.runs:
+                t = run.text.strip()
+                if not t:
+                    continue
+                c = rgb_hex(run.font.color)
+                if c and c.upper() == "#F5C518":
+                    gold_texts.append(t)
+                elif c and c.upper() in ("#FFFFFF", "#FEFEFE"):
+                    white_texts.append(t)
+                elif c:
+                    other_texts.append((t, c))
+    print(f"\n  Slide {si+1}:")
+    if gold_texts:
+        print(f"    GOLD : {gold_texts}")
+    if white_texts:
+        print(f"    WHITE: {white_texts}")
+    if other_texts:
+        print(f"    OTHER: {other_texts}")
+    if not gold_texts and not white_texts and not other_texts:
+        print(f"    (no colored runs)")
+
+# ─────────────────────────────────────────────────────────────
+# SECTION 5: Complete — bullet count & split pattern
+# ─────────────────────────────────────────────────────────────
+print()
+print("=" * 70)
+print("SECTION 5: COMPLETE VERSION — BULLET COUNT PER SLIDE")
+print("=" * 70)
+
+for si, slide in enumerate(prs_comp.slides):
+    all_paras = []
+    for shape in slide.shapes:
+        if not shape.has_text_frame:
+            continue
+        for para in shape.text_frame.paragraphs:
+            t = para.text.strip()
+            if t:
+                all_paras.append(f"[{shape.name}]'{t}'")
+    print(f"  Slide {si+1} ({len(all_paras)} paras): {' | '.join(all_paras)}")
+
+print("\nDone.")
