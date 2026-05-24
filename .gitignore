@@ -4,6 +4,7 @@
 *test_output*
 *_slides/
 after_slides/
+*_v[0-9]*.pptx
 
 # After 원본 샘플 (용량 대형, 이미지 기반)
 *(after).pptx
