@@ -316,7 +316,10 @@ def build_content_slide(prs, heading: str, bullets: list, images=None, is_contin
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     _solid_bg(slide, BG_COLOR)
 
-    HEADER_H = Inches(1.20)
+    HEADER_H = Inches(1.10)
+
+    # ── 전체 배경 rect (일부 뷰어에서 background fill 미렌더링 대비)
+    _add_rect(slide, Inches(0), Inches(0), SLIDE_W, SLIDE_H, BG_COLOR)
 
     # ── 헤더 배경 박스
     _add_rect(slide, Inches(0), Inches(0), SLIDE_W, HEADER_H, HEADER_BG)
@@ -325,15 +328,15 @@ def build_content_slide(prs, heading: str, bullets: list, images=None, is_contin
     head_label = heading
     _add_textbox(
         slide,
-        Inches(0.4), Inches(0.12),
-        SLIDE_W - Inches(0.8), HEADER_H - Inches(0.1),
-        head_label, FONT_CLASSIC_BOLD, 30,
+        Inches(0.45), Inches(0.10),
+        SLIDE_W - Inches(0.9), HEADER_H - Inches(0.08),
+        head_label, FONT_CLASSIC_BOLD, 28,
         bold=True, color=WHITE, align=PP_ALIGN.LEFT,
     )
 
     # ── 본문 불렛 영역
-    body_top = HEADER_H + Inches(0.20)
-    body_h   = SLIDE_H  - body_top - Inches(0.2)
+    body_top = HEADER_H + Inches(0.15)
+    body_h   = SLIDE_H  - body_top - Inches(0.15)
     body_box = slide.shapes.add_textbox(
         Inches(0.45), body_top,
         SLIDE_W - Inches(0.8), body_h,
@@ -342,15 +345,14 @@ def build_content_slide(prs, heading: str, bullets: list, images=None, is_contin
     tf.word_wrap = True
 
     # hanging indent: 두 번째 줄이 "-" 뒤 텍스트와 정렬되도록
-    # marL = 들여쓰기 총량, indent = 첫 줄은 그만큼 왼쪽으로 당김
-    _MARL   =  int(Inches(0.52))   # 두 번째 줄 시작 위치 (EMU)
-    _INDENT = -int(Inches(0.52))   # 첫 줄 = marL + indent = 0 위치
+    _MARL   =  int(Inches(0.60))
+    _INDENT = -int(Inches(0.60))
 
     for i, bullet in enumerate(bullets):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         p.alignment    = PP_ALIGN.LEFT
-        p.space_before = Pt(22)
-        p.space_after  = Pt(4)
+        p.space_before = Pt(10) if i == 0 else Pt(28)
+        p.space_after  = Pt(0)
 
         pPr = p._p.get_or_add_pPr()
         pPr.set("marL",   str(_MARL))
@@ -361,7 +363,7 @@ def build_content_slide(prs, heading: str, bullets: list, images=None, is_contin
             run = p.add_run()
             run.text = ("-  " + rd['text']) if j == 0 else rd['text']
             run.font.name  = FONT_NOTO
-            run.font.size  = Pt(28)
+            run.font.size  = Pt(32)
             run.font.bold  = True
             run.font.color.rgb = GOLD if rd['gold'] else WHITE
 
@@ -384,7 +386,7 @@ def build_content_slide(prs, heading: str, bullets: list, images=None, is_contin
     return slide
 
 
-_CHARS_PER_LINE  = 25   # 28pt에서 슬라이드 너비에 들어가는 한글 글자 수 추정
+_CHARS_PER_LINE  = 22   # 32pt에서 슬라이드 너비에 들어가는 한글 글자 수 추정
 _MAX_LINES_SLIDE = 7    # 슬라이드 본문에 들어갈 최대 줄 수
 
 def _est_lines(bullet: list) -> int:
@@ -395,14 +397,14 @@ def _split_bullets(bullets: list, max_per_slide: int) -> list:
     if n == 0:
         return [bullets]
     total_lines = sum(_est_lines(b) for b in bullets)
-    # 전체 줄 수가 한 슬라이드에 들어오면 분리하지 않음
-    if total_lines <= _MAX_LINES_SLIDE:
-        return [bullets]
     # 불렛 2개 이하는 길어도 분리 안 함
     if n <= 2:
         return [bullets]
-    # 불렛 수가 허용치 초과: 동등 분할
+    # 불렛 수가 허용치 초과: 줄 수도 넘을 때만 동등 분할
+    # (줄 수 허용 범위면 불렛이 많아도 한 슬라이드에 배치)
     if n > max_per_slide:
+        if total_lines <= _MAX_LINES_SLIDE:
+            return [bullets]
         num_chunks = (n + max_per_slide - 1) // max_per_slide
         base_size  = n // num_chunks
         remainder  = n % num_chunks
@@ -412,7 +414,10 @@ def _split_bullets(bullets: list, max_per_slide: int) -> list:
             chunks.append(bullets[idx : idx + size])
             idx += size
         return chunks
-    # 불렛 수는 적지만 내용이 길 때: greedy 줄 수 기반 분할
+    # 불렛 수 허용 범위(n ≤ max): 줄 수 기반 판단 (+1 여유)
+    if total_lines <= _MAX_LINES_SLIDE + 1:
+        return [bullets]
+    # greedy 줄 수 기반 분할
     target = _MAX_LINES_SLIDE - 2
     chunks, current, curr_lines = [], [], 0
     for b in bullets:
