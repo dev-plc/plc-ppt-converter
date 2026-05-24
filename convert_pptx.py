@@ -204,7 +204,8 @@ def parse_before(path: str) -> dict:
     content_slides = []
     for slide in all_slides[1:]:
         heading, bullets, images = parse_content_slide(slide, scale_x, scale_y)
-        if heading or bullets or images:
+        # 텍스트가 전혀 없는 슬라이드는 스킵 (이미 변환된 파일 등 이미지 전용 슬라이드)
+        if heading or bullets:
             content_slides.append({"heading": heading, "bullets": bullets, "images": images})
 
     return {
