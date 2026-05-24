@@ -34,7 +34,7 @@ nas-scp $TMP_ENV "${NAS_DIR}/.env"
 Remove-Item $TMP_ENV
 
 Write-Host "[4/4] Docker 빌드 및 시작 (GitHub 클론 포함, 2~3분 소요)..." -ForegroundColor Cyan
-nas-ssh "cd ${NAS_DIR} && sudo /usr/local/bin/docker compose up -d --build"
+nas-ssh "cd ${NAS_DIR} && sudo /usr/local/bin/docker compose down; sudo /usr/local/bin/docker compose up -d --build --no-cache"
 
 Write-Host ""
 Write-Host "배포 완료!" -ForegroundColor Green
