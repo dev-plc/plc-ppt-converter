@@ -1,10 +1,10 @@
 services:
   plc-ppt-bot:
     build:
-      context: ..
-      dockerfile: docker/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     container_name: plc-ppt-bot
     restart: always
-    env_file: ../.env
+    env_file: .env
     volumes:
-      - ../data:/app/data
+      - ./data:/app/data
