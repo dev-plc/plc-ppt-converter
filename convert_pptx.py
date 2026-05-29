@@ -191,9 +191,24 @@ def parse_content_slide(slide, scale_x=1.0, scale_y=1.0):
     images = _extract_images(slide, scale_x, scale_y)
     return heading, bullets, images
 
+def _is_image_only_pptx(slides) -> bool:
+    """모든 슬라이드가 이미지 전용(텍스트 shape 없음)이면 True."""
+    for slide in slides:
+        for shape in slide.shapes:
+            if shape.has_text_frame and shape.text_frame.text.strip():
+                return False
+    return True
+
 def parse_before(path: str) -> dict:
     prs = Presentation(path)
     all_slides = list(prs.slides)
+
+    if _is_image_only_pptx(all_slides):
+        raise ValueError(
+            "이 파일은 이미지 기반 슬라이드로만 구성되어 있습니다.\n"
+            "이미 변환된 파일(After/Complete)이나 1차 작업물로 보입니다.\n"
+            "텍스트 shape이 있는 원본 Before 파일을 사용해 주세요."
+        )
 
     # 소스 슬라이드 크기가 After 기준(SLIDE_W×SLIDE_H)과 다를 경우 좌표 스케일링
     scale_x = int(SLIDE_W) / int(prs.slide_width)
@@ -204,7 +219,7 @@ def parse_before(path: str) -> dict:
     content_slides = []
     for slide in all_slides[1:]:
         heading, bullets, images = parse_content_slide(slide, scale_x, scale_y)
-        # 텍스트가 전혀 없는 슬라이드는 스킵 (이미 변환된 파일 등 이미지 전용 슬라이드)
+        # 텍스트가 전혀 없는 슬라이드는 스킵 (이미지 전용 슬라이드)
         if heading or bullets:
             content_slides.append({"heading": heading, "bullets": bullets, "images": images})
 
@@ -506,7 +521,11 @@ def main():
     out_path = args.output or (os.path.splitext(args.input)[0] + "_converted.pptx")
 
     print(f"[1/3] 파싱: {os.path.basename(args.input)}")
-    data = parse_before(args.input)
+    try:
+        data = parse_before(args.input)
+    except ValueError as e:
+        print(f"오류: {e}")
+        sys.exit(1)
     t = data["title"]
     print(f"      시리즈: {t['series']}")
     print(f"      제목  : {t['lecture_title']}")
