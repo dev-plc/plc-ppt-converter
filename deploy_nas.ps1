@@ -1,5 +1,6 @@
 ﻿# NAS 배포 스크립트 — Dockerfile(설치 패키지)이 바뀌었을 때 실행
 # 코드만 바뀌었을 때는 update_nas.ps1 로 충분
+# PowerShell에서 실행: .\deploy_nas.ps1
 #
 # 봇 토큰: PowerShell에 $env:TELEGRAM_BOT_TOKEN 이 있으면 NAS .env를 새로 만들고,
 #          없으면 NAS에 이미 있는 .env를 그대로 사용합니다.
@@ -9,8 +10,24 @@ $NAS_HOST = "211.104.170.129"
 $NAS_DIR  = "/volume1/docker/plc-ppt-bot"
 $SSH_KEY  = "$env:USERPROFILE\.ssh\id_ed25519"
 
-function nas-ssh($cmd) { & ssh -i $SSH_KEY "${NAS_USER}@${NAS_HOST}" $cmd }
-function nas-scp($src, $dst) { & scp -O -i $SSH_KEY $src "${NAS_USER}@${NAS_HOST}:$dst" }
+function Fail($msg) { Write-Host "실패: $msg" -ForegroundColor Red; exit 1 }
+function nas-ssh($cmd) {
+    & ssh -i $SSH_KEY -o ConnectTimeout=15 "${NAS_USER}@${NAS_HOST}" $cmd
+    if ($LASTEXITCODE -ne 0) { Fail "NAS 명령 실패 (종료 코드 $LASTEXITCODE): $cmd" }
+}
+function nas-scp($src, $dst) {
+    & scp -O -i $SSH_KEY -o ConnectTimeout=15 $src "${NAS_USER}@${NAS_HOST}:$dst"
+    if ($LASTEXITCODE -ne 0) { Fail "파일 전송 실패: $src" }
+}
+
+# ── 접속 확인 (실패하면 여기서 멈춤) ───────────────────────────────────────────
+if (-not (Test-Path $SSH_KEY)) {
+    Fail "SSH 키가 없습니다: $SSH_KEY`n      이 PC/계정에서 처음이면 NAS_SETUP.md 3장대로 키를 만들고 NAS에 등록하세요."
+}
+& ssh -i $SSH_KEY -o ConnectTimeout=15 -o BatchMode=yes "${NAS_USER}@${NAS_HOST}" "echo ok" | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Fail "NAS(${NAS_HOST}:22)에 SSH로 접속할 수 없습니다. 네트워크·방화벽·키 등록을 확인하세요."
+}
 
 Write-Host "[1/4] NAS 디렉토리 확인..." -ForegroundColor Cyan
 nas-ssh "mkdir -p ${NAS_DIR}/data && chown -R ${NAS_USER}:users ${NAS_DIR}"
@@ -31,10 +48,9 @@ DATA_DIR=/app/data
     Remove-Item $TMP_ENV
     Write-Host "       새 .env 전송 완료"
 } else {
-    $exists = nas-ssh "test -f ${NAS_DIR}/.env && echo yes"
+    $exists = nas-ssh "test -f ${NAS_DIR}/.env && echo yes || echo no"
     if ($exists -ne "yes") {
-        Write-Error "NAS에 .env가 없습니다. 먼저 `$env:TELEGRAM_BOT_TOKEN = '봇토큰' 을 설정하고 다시 실행하세요."
-        exit 1
+        Fail "NAS에 .env가 없습니다. 먼저 `$env:TELEGRAM_BOT_TOKEN = '봇토큰' 을 설정하고 다시 실행하세요."
     }
     Write-Host "       NAS의 기존 .env 사용 (봇 토큰 그대로)"
 }
