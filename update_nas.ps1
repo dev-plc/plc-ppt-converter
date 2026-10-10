@@ -2,6 +2,7 @@
 # GitHub master에 push 후 이 스크립트만 실행하면 끝 (PowerShell: .\update_nas.ps1)
 #
 # 컨테이너 재시작 시 entrypoint가 자동으로 git pull 실행
+# $env:TELEGRAM_BOT_TOKEN 을 설정하고 실행하면 봇 토큰도 함께 교체
 
 $NAS_USER = "plc_admin"
 # NAS 주소: 시놀로지 DDNS (공인 IP가 바뀌어도 따라감). 다른 주소를 쓰려면 $env:NAS_HOST 지정
@@ -28,6 +29,19 @@ if ($LASTEXITCODE -ne 0) {
     Fail "NAS(${NAS_HOST}:22)에 SSH로 접속할 수 없습니다. 네트워크·방화벽·키 등록을 확인하세요."
 }
 
-Write-Host "NAS 컨테이너 재시작 중..." -ForegroundColor Cyan
-nas-ssh "sudo /usr/local/bin/docker restart plc-ppt-bot"
+if ($env:TELEGRAM_BOT_TOKEN) {
+    # 봇 토큰 교체: .env를 새로 올리고 컨테이너를 다시 만든다 (재빌드 없음)
+    Write-Host "새 봇 토큰 반영 중..." -ForegroundColor Cyan
+    $TMP_ENV = [System.IO.Path]::GetTempFileName()
+    @"
+TELEGRAM_BOT_TOKEN=$env:TELEGRAM_BOT_TOKEN
+DATA_DIR=/app/data
+"@ | Set-Content -Path $TMP_ENV -Encoding ASCII
+    nas-scp $TMP_ENV "${NAS_DIR}/.env"
+    Remove-Item $TMP_ENV
+    nas-ssh "cd ${NAS_DIR} && sudo /usr/local/bin/docker compose up -d --force-recreate"
+} else {
+    Write-Host "NAS 컨테이너 재시작 중..." -ForegroundColor Cyan
+    nas-ssh "sudo /usr/local/bin/docker restart plc-ppt-bot"
+}
 Write-Host "완료! 컨테이너가 GitHub master에서 최신 코드를 자동으로 받아옵니다." -ForegroundColor Green

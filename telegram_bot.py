@@ -45,6 +45,8 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     level=logging.INFO,
 )
+# httpx는 요청 주소(봇 토큰 포함)를 INFO로 남기므로 경고 이상만 기록
+logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger(__name__)
 
 
