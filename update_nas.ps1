@@ -1,4 +1,4 @@
-# NAS 코드 업데이트 스크립트
+﻿# NAS 코드 업데이트 스크립트
 # GitHub master에 push 후 이 스크립트만 실행하면 끝
 #
 # 컨테이너 재시작 시 entrypoint가 자동으로 git pull 실행
