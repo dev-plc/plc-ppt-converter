@@ -34,7 +34,7 @@ Noto Sans KR: [Google Fonts](https://fonts.google.com/noto/specimen/Noto+Sans+KR
 |------|-----|
 | 배경 | 세로 그라데이션 `#091442` → `#191629` |
 | 제목 박스 | 글자 폭에 맞춘 박스 `#3C4059`, 국립박물관문화재단클래식 Medium 38pt |
-| 본문 | Noto Sans KR Bold 32pt (넘치면 28pt까지 축소), `#EEEEEE`, "-" 불렛 |
+| 본문 | Noto Sans KR Bold 32pt (넘치면 28pt까지 축소), `#EEEEEE`, 불렛은 글자 "-" (Canva에서도 동그라미로 안 바뀜) |
 | 강조 (골드) | `#FFCD4A` — 원본에 형광펜이 칠해진 글자만 |
 | 표지 목사님 이름 | `#FEEFC5` |
 

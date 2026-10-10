@@ -54,7 +54,8 @@ HEAD_PAD_Y    = 0.12
 
 BODY_X        = 0.50    # 본문 불렛("-") 시작 위치
 BODY_RIGHT    = 13.08   # 본문 오른쪽 끝
-BODY_HANG     = 0.44    # "-" 뒤 텍스트 들여쓰기
+DASH_PREFIX   = "-  "    # 불렛: PowerPoint 불렛 기능 대신 글자로 넣는다
+                         # (Canva 등은 사용자 불렛을 동그라미(•)로 바꿔 버림)
 BODY_GAP_TOP  = 0.42    # 제목 박스 아래 ~ 본문 시작
 BODY_BOTTOM   = 7.22    # 본문 아래 한계
 BODY_TOP_NOHEAD = 0.45  # 제목 없는 슬라이드의 본문 시작
@@ -476,8 +477,12 @@ def _heading_layout(heading: str, max_w_in: float):
 
 _WIDTH_SAFETY = 0.95   # 글꼴·렌더러 차이를 감안해 폭을 조금 좁게 잡고 줄 수를 추정
 
+def _hang_in(size) -> float:
+    """"-  " 글자 폭(인치) = 내어쓰기 폭."""
+    return _text_em(DASH_PREFIX) * size / 72
+
 def _bullet_lines(bullets, size, width_in):
-    width_em = (width_in - BODY_HANG) * _WIDTH_SAFETY * 72 / size
+    width_em = (width_in - _hang_in(size)) * _WIDTH_SAFETY * 72 / size
     return [_count_lines(_bullet_full_text(b), width_em) for b in bullets]
 
 def _block_height_pt(lines, size):
@@ -628,20 +633,15 @@ def _add_heading(slide, heading: str, x_in: float, max_w_in: float) -> float:
     return HEAD_Y + box_h, x_in + box_w
 
 def _bullet_ppr(p, size):
-    """네이티브 "-" 불렛 + 내어쓰기 (줄바꿈된 줄이 텍스트 시작에 맞춰짐)."""
+    """불렛 기능은 끄고(buNone) "-  " 폭만큼 내어쓰기 → 줄바꿈된 줄이 글자 시작에 맞춰짐."""
+    hang = int(Inches(_hang_in(size)))
     pPr = p._p.get_or_add_pPr()
-    pPr.set('marL', str(int(Inches(BODY_HANG))))
-    pPr.set('indent', str(-int(Inches(BODY_HANG))))
-    for tag in ('buClr', 'buSzPct', 'buFontTx', 'buChar', 'buNone', 'buAutoNum'):
+    pPr.set('marL', str(hang))
+    pPr.set('indent', str(-hang))
+    for tag in ('buClr', 'buSzPct', 'buFontTx', 'buFont', 'buChar', 'buNone', 'buAutoNum'):
         for el in pPr.findall(f'{_A}{tag}'):
             pPr.remove(el)
-    buClr = pPr.makeelement(f'{_A}buClr', {})
-    clr = buClr.makeelement(f'{_A}srgbClr', {'val': str(BODY_COLOR)})
-    buClr.append(clr)
-    pPr.append(buClr)
-    pPr.append(pPr.makeelement(f'{_A}buSzPct', {'val': '100000'}))
-    pPr.append(pPr.makeelement(f'{_A}buFontTx', {}))
-    pPr.append(pPr.makeelement(f'{_A}buChar', {'char': '-'}))
+    pPr.append(pPr.makeelement(f'{_A}buNone', {}))
 
 def _add_body(slide, bullets, size, left_in, right_in, top_in, bottom_in):
     """불렛을 영역 안에 배치. 남는 공간은 불렛 사이 간격 → 위쪽 여백 순으로 배분."""
@@ -673,6 +673,9 @@ def _add_body(slide, bullets, size, left_in, right_in, top_in, bottom_in):
         p.space_before = Pt(0 if i == 0 else gap)
         p.space_after  = Pt(0)
         _bullet_ppr(p, size)
+        dash = p.add_run()
+        dash.text = DASH_PREFIX
+        _set_font(dash, FONT_NOTO, size, BODY_COLOR, bold=True)
         for rd in bullet:
             run = p.add_run()
             run.text = rd['text']
