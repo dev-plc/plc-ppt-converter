@@ -26,17 +26,25 @@ python convert_pptx.py samples/에베소서\ 제4강\(before\).pptx
 python convert_pptx.py input.pptx output.pptx --png
 ```
 
-## 디자인 상수 (convert_pptx.py 상단)
-- BG_COLOR   = #1B2045  (배경)
-- HEADER_BG  = #232A56  (헤더 박스)
-- GOLD       = #F5C518  (핵심어 강조)
-- MAX_BULLETS = 3       (슬라이드당 최대 불렛)
-- 본문 폰트 크기: 28pt Bold
+## 디자인 상수 (convert_pptx.py 상단, 완성샘플 측정값)
+- BG_TOP/BG_BOTTOM = #091442 → #191629  (세로 그라데이션 배경, 그림으로 깖)
+- HEADER_BG  = #3C4059  (제목 글자 폭에 맞춘 박스)
+- GOLD       = #FFCD4A  (원본 <a:highlight> 글자만)
+- BODY_PT_MAX/MIN = 32/28  (본문 크기 — 28pt로도 안 들어갈 때만 슬라이드 분리)
+- 제목: 국립박물관문화재단클래식 Bold 38pt
 
 ## Before PPTX 파싱 주의
 - 에베소서/레위기: Shape '제목 1'에 시리즈명+강의제목 합쳐짐
 - 마태복음: Shape '제목 1'=시리즈명, Shape '부제목 2'=강의제목+목사명 (분리)
-- 핵심어 감지: 28자 이하, 따옴표 없음, 성경구절 패턴 없음 → 골드 색상
+- 제목이 비어 있으면 앞 슬라이드 제목 반복, 제목 shape 자체가 없으면 첫 단락이 제목
+- 쉼표 등으로 끝나는 문단은 다음 문단과 한 불렛으로 병합 (_CONTINUATION_ENDINGS)
+- 슬라이드 종류: text / text_image(이미지 열 + 글) / image(이미지만, 원본 배치 유지)
+- 이미지 전용 파일(이미 변환된 After/1차 작업물)은 ValueError로 거부
+
+## 텔레그램 봇 / NAS
+- build_after()는 (슬라이드 수, slide_map)을 반환 — slide_map[i] = 원본 i+1번의 변환 슬라이드 번호들
+- preview.py가 LibreOffice로 원본·변환 슬라이드를 JPG로 렌더 → 봇이 짝지어 전송
+- 코드만 바뀌면 update_nas.ps1, Dockerfile(apt 패키지)이 바뀌면 deploy_nas.ps1 재실행
 
 ## 개발 기록 (옵시디언 연동)
 
