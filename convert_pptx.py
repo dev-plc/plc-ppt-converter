@@ -35,8 +35,7 @@ SLIDE_W = Inches(13.333)
 SLIDE_H = Inches(7.5)
 
 # ── 폰트 ─────────────────────────────────────────────────────────────────────
-FONT_CLASSIC_BOLD = "국립박물관문화재단클래식 Bold"
-FONT_CLASSIC_MED  = "국립박물관문화재단클래식 Medium"
+FONT_CLASSIC_MED  = "국립박물관문화재단클래식 Medium"   # 제목·표지
 FONT_NOTO         = "Noto Sans KR"
 
 # ── 본문/제목 레이아웃 (인치·pt) ──────────────────────────────────────────────
@@ -625,7 +624,7 @@ def _add_heading(slide, heading: str, x_in: float, max_w_in: float) -> float:
     p.line_spacing = Pt(HEAD_LINE_PT * size / HEAD_PT)
     run = p.add_run()
     run.text = heading
-    _set_font(run, FONT_CLASSIC_BOLD, size, WHITE, bold=True)
+    _set_font(run, FONT_CLASSIC_MED, size, WHITE, bold=False)
     return HEAD_Y + box_h, x_in + box_w
 
 def _bullet_ppr(p, size):
@@ -718,19 +717,19 @@ def build_title_slide(prs, series: str, lecture_title: str, pastor: str,
 
     # ── 시리즈명 (예: 마태복음 제62강)
     _add_textbox(slide, Inches(0.5), Inches(1.60), full_w, Inches(0.80),
-                 series, FONT_CLASSIC_BOLD, 40, color=BODY_COLOR, align=PP_ALIGN.CENTER)
+                 series, FONT_CLASSIC_MED, 40, bold=False, color=BODY_COLOR, align=PP_ALIGN.CENTER)
 
     # ── 강의 제목 (가운데, 크게) — 길면 한 줄에 맞도록 줄인다
     title_pt = 64
     while title_pt > 40 and _text_em(lecture_title, classic=True) * title_pt / 72 > 12.0:
         title_pt -= 4
     _add_textbox(slide, Inches(0.5), Inches(2.85), full_w, Inches(1.30),
-                 lecture_title, FONT_CLASSIC_BOLD, title_pt,
-                 bold=True, color=BODY_COLOR, align=PP_ALIGN.CENTER)
+                 lecture_title, FONT_CLASSIC_MED, title_pt,
+                 bold=False, color=BODY_COLOR, align=PP_ALIGN.CENTER)
 
     # ── 목사님 이름 (크림색)
     _add_textbox(slide, Inches(0.5), Inches(4.50), full_w, Inches(0.80),
-                 pastor, FONT_CLASSIC_MED, 36, color=PASTOR_COLOR, align=PP_ALIGN.CENTER)
+                 pastor, FONT_CLASSIC_MED, 36, bold=False, color=PASTOR_COLOR, align=PP_ALIGN.CENTER)
     return slide
 
 def build_image_slide(prs, pictures):
