@@ -4,7 +4,8 @@
 # 컨테이너 재시작 시 entrypoint가 자동으로 git pull 실행
 
 $NAS_USER = "plc_admin"
-$NAS_HOST = "211.104.170.129"
+# NAS 주소: 시놀로지 DDNS (공인 IP가 바뀌어도 따라감). 다른 주소를 쓰려면 $env:NAS_HOST 지정
+$NAS_HOST = if ($env:NAS_HOST) { $env:NAS_HOST } else { "plcnas01.synology.me" }
 $NAS_DIR  = "/volume1/docker/plc-ppt-bot"
 $SSH_KEY  = "$env:USERPROFILE\.ssh\id_ed25519"
 
