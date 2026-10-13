@@ -31,6 +31,7 @@ python convert_pptx.py input.pptx output.pptx --png
 - HEADER_BG  = #3C4059  (제목 글자 폭에 맞춘 박스)
 - GOLD       = #FFCD4A  (원본 <a:highlight> 글자만)
 - BODY_PT_MAX/MIN = 32/28  (본문 크기 — 28pt로도 안 들어갈 때만 슬라이드 분리)
+- CONTENT_BOTTOM = 화면 3/4  (아래 1/4은 글·이미지 모두 비움 — 멀리서 가려 안 보임)
 - 제목·표지 글꼴: 국립박물관문화재단클래식 Medium (제목 38pt, 굵게 끔)
 
 ## Before PPTX 파싱 주의

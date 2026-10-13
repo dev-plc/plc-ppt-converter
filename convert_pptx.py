@@ -57,7 +57,8 @@ BODY_RIGHT    = 13.08   # 본문 오른쪽 끝
 DASH_PREFIX   = "-  "    # 불렛: PowerPoint 불렛 기능 대신 글자로 넣는다
                          # (Canva 등은 사용자 불렛을 동그라미(•)로 바꿔 버림)
 BODY_GAP_TOP  = 0.42    # 제목 박스 아래 ~ 본문 시작
-BODY_BOTTOM   = 7.22    # 본문 아래 한계
+CONTENT_BOTTOM = 7.5 * 0.75   # 화면 아래 1/4은 비워 둔다 (멀리서 앞사람 머리에 가려 안 보임)
+BODY_BOTTOM   = CONTENT_BOTTOM   # 본문 아래 한계
 BODY_TOP_NOHEAD = 0.45  # 제목 없는 슬라이드의 본문 시작
 
 MIN_PICTURE_AREA = 0.02  # 슬라이드 면적 대비 이 비율 미만 이미지는 장식으로 간주
@@ -736,11 +737,23 @@ def build_title_slide(prs, series: str, lecture_title: str, pastor: str,
     return slide
 
 def build_image_slide(prs, pictures):
-    """이미지 전용 슬라이드: 원본 배치를 그대로 옮긴다."""
+    """이미지 전용 슬라이드: 원본 배치를 그대로 옮기되,
+    아래 1/4을 침범하면 전체를 비율 그대로 줄여 위쪽 3/4 안에 가운데 정렬."""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     _add_background(slide)
-    for pic in pictures:
-        _place_picture(slide, pic, pic['left'], pic['top'], pic['width'], pic['height'])
+    limit = int(Inches(CONTENT_BOTTOM))
+    bottom = max(p['top'] + p['height'] for p in pictures)
+    scale = min(1.0, limit / bottom) if bottom > 0 else 1.0
+    if scale < 1.0:
+        cx = (min(p['left'] for p in pictures)
+              + max(p['left'] + p['width'] for p in pictures)) / 2
+        for pic in pictures:
+            left = int(SLIDE_W) / 2 + (pic['left'] - cx) * scale
+            _place_picture(slide, pic, left, pic['top'] * scale,
+                           pic['width'] * scale, pic['height'] * scale)
+    else:
+        for pic in pictures:
+            _place_picture(slide, pic, pic['left'], pic['top'], pic['width'], pic['height'])
     return slide
 
 SW_IN = 13.333   # 슬라이드 폭 (인치)
@@ -803,10 +816,10 @@ def build_text_image_slide(prs, heading, bullets, pictures, size, lay):
     if heading:
         _add_heading(slide, heading, lay['head_x'], lay['head_max'])
 
-    # 이미지 열: 제목 높이부터 슬라이드 아래·옆 끝까지 채움, 여러 장이면 세로로 쌓기
+    # 이미지 열: 제목 높이부터 화면 3/4 지점까지·옆 끝까지 채움, 여러 장이면 세로로 쌓기
     ordered = sorted(pictures, key=lambda p: (p['top'], p['left']))
     gap = 0.08
-    total_h = 7.5 - lay['img_top']
+    total_h = CONTENT_BOTTOM - lay['img_top']   # 이미지도 아래 1/4은 비움
     each_h = (total_h - gap * (len(ordered) - 1)) / len(ordered)
     for i, pic in enumerate(ordered):
         y = lay['img_top'] + i * (each_h + gap)
